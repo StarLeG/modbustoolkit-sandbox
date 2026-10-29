@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import socket
-from dataclasses import replace
 
 import pytest
 from pymodbus.client import AsyncModbusTcpClient
@@ -17,18 +16,6 @@ from app.modbus.server import (
     serve,
 )
 from app.modbus.slave_map import SlaveMap
-
-
-def _free_port() -> int:
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
-
-
-@pytest.fixture
-def config() -> Config:
-    return replace(Config(), MODBUS_TCP_HOST="127.0.0.1", MODBUS_TCP_PORT=_free_port())
-
 
 # --- контекст без сети ----------------------------------------------------------------
 
