@@ -63,6 +63,17 @@ def test_index_has_ping_panel() -> None:
         assert f"<option>{unit_id}</option>" in html
 
 
+def test_index_has_metrics_panel() -> None:
+    """Панель «Счётчики сервера» с поллингом REST (TASK-703)."""
+    with _client() as client:
+        response = client.get("/")
+    html = response.text
+    assert "Счётчики сервера" in html
+    assert "/api/modbus/metrics" in html
+    for field in ("metrics-conn", "metrics-req", "metrics-err", "metrics-uptime"):
+        assert f'id="{field}"' in html
+
+
 def test_index_has_formats_table() -> None:
     """Таблица форматов и адресов unit ID 1..10 (TASK-701, HRIR_SPEC)."""
     with _client() as client:

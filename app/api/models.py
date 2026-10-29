@@ -249,6 +249,21 @@ class PingResponse(BaseModel):
     last_error: str | None
 
 
+class MetricsResponse(BaseModel):
+    """Счётчики Modbus-сервера (TASK-703).
+
+    `req_per_s` / `err_per_s` — скорости за скользящее окно
+    (`app.modbus.metrics.RATE_WINDOW_S`), `uptime_s` — с запуска сервера.
+    """
+
+    active_connections: int
+    requests_total: int
+    errors_total: int
+    req_per_s: float
+    err_per_s: float
+    uptime_s: float
+
+
 class HealthzResponse(BaseModel):
     """Ответ healthcheck (TASK-310)."""
 

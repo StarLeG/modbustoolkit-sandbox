@@ -34,6 +34,7 @@ from app.modbus.behavior import WritePolicy
 from app.modbus.config import Config
 from app.modbus.injection import Injection, InjectionRegistry, find_injection
 from app.modbus.limits import ConnectionLimiter, RateWindow
+from app.modbus.metrics import ServerMetrics
 from app.modbus.slave_map import (
     EXC_DEVICE_FAILURE,
     EXC_ILLEGAL_ADDRESS,
@@ -180,13 +181,20 @@ class GuardedRequestHandler(ServerRequestHandler):
     """
 
     _peer_ip: str | None = None
+    #: Последний отправленный ответ — для классификации ошибок (TASK-703).
+    _last_sent: ModbusPDU | None = None
 
     def __init__(self, owner: Any, trace_packet: Any, trace_pdu: Any, trace_connect: Any) -> None:
         super().__init__(owner, trace_packet, trace_pdu, trace_connect)  # type: ignore[no-untyped-call]
         self._write_window = RateWindow(owner.max_write_per_sec)
 
+    def server_send(self, response: Any, addr: Any) -> None:
+        self._last_sent = response
+        super().server_send(response, addr)  # type: ignore[no-untyped-call]
+
     def callback_connected(self) -> None:
         super().callback_connected()
+        self.server.metrics.connection_opened()
         peer = self.transport.get_extra_info("peername") if self.transport else None
         ip = str(peer[0]) if peer else ""
         if not self.server.conn_limiter.allow(ip):
@@ -197,6 +205,7 @@ class GuardedRequestHandler(ServerRequestHandler):
 
     def callback_disconnected(self, exc: Exception | None) -> None:
         super().callback_disconnected(exc)
+        self.server.metrics.connection_closed()
         if self._peer_ip is not None:
             self.server.conn_limiter.release(self._peer_ip)
             self._peer_ip = None
@@ -222,7 +231,9 @@ class GuardedRequestHandler(ServerRequestHandler):
         применяется. В журнал такие отказы не пишутся — флуд исчерпал бы ring
         buffer (ADR-006 п. 3), фиксируются только debug-логом; инъекции так же
         не журналируются (ADR-007 п. 7). На время запроса в `_PEER_IP` кладётся
-        IP пира — для атрибуции modbus-событий журнала.
+        IP пира — для атрибуции modbus-событий журнала. Каждый запрос учитывается
+        в `server.metrics` (TASK-703): ошибкой считаются ExceptionResponse
+        (включая 0x06 и инъекции exception) и поглощённые timeout-инъекцией.
         """
         pdu = self.last_pdu
         if (
@@ -234,7 +245,8 @@ class GuardedRequestHandler(ServerRequestHandler):
             response = ExceptionResponse(pdu.function_code, ExcCodes.DEVICE_BUSY)
             response.transaction_id = pdu.transaction_id
             response.dev_id = pdu.dev_id
-            self.server_send(response, self.last_addr)  # type: ignore[no-untyped-call]
+            self.server.metrics.request(error=True)
+            self.server_send(response, self.last_addr)
             return
         injection = self._match_injection(pdu)
         if pdu is not None and injection is not None:
@@ -249,7 +261,8 @@ class GuardedRequestHandler(ServerRequestHandler):
                 response = ExceptionResponse(pdu.function_code, injection.code)
                 response.transaction_id = pdu.transaction_id
                 response.dev_id = pdu.dev_id
-                self.server_send(response, self.last_addr)  # type: ignore[no-untyped-call]
+                self.server.metrics.request(error=True)
+                self.server_send(response, self.last_addr)
                 return
             if injection.kind == "delay":
                 log.debug(
@@ -265,16 +278,19 @@ class GuardedRequestHandler(ServerRequestHandler):
                     injection.id,
                     injection.slave,
                 )
+                self.server.metrics.request(error=True)
                 return  # запрос поглощается: без ответа и без обработки (ADR-007 п. 5)
+        self._last_sent = None
         token = _PEER_IP.set(self._peer_ip)
         try:
             await super().handle_request()  # type: ignore[no-untyped-call]
         finally:
             _PEER_IP.reset(token)
+        self.server.metrics.request(error=isinstance(self._last_sent, ExceptionResponse))
 
 
 class LimitedTcpServer(ModbusTcpServer):
-    """TCP-сервер с лимитами и инъекциями публичного порта (ADR-006/007)."""
+    """TCP-сервер с лимитами, инъекциями и счётчиками (ADR-006/007, TASK-703)."""
 
     def __init__(
         self,
@@ -282,12 +298,14 @@ class LimitedTcpServer(ModbusTcpServer):
         max_conn_per_ip: int = 20,
         max_write_per_sec: int = 200,
         injections: InjectionRegistry | None = None,
+        metrics: ServerMetrics | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(*args, **kwargs)
         self.conn_limiter = ConnectionLimiter(max_conn_per_ip)
         self.max_write_per_sec = max_write_per_sec
         self.injections = injections if injections is not None else InjectionRegistry()
+        self.metrics = metrics if metrics is not None else ServerMetrics()
 
     def callback_new_connection(self) -> GuardedRequestHandler:
         return GuardedRequestHandler(self, self.trace_packet, self.trace_pdu, self.trace_connect)
@@ -297,11 +315,13 @@ def create_server(
     config: Config,
     context: SlaveMapContext,
     injections: InjectionRegistry | None = None,
+    metrics: ServerMetrics | None = None,
 ) -> ModbusTcpServer:
     """Создать Modbus-TCP сервер (хост/порт из `Config`, ещё не слушает).
 
     `injections` — реестр инъекций ошибок (ADR-007); без него — пустой реестр
-    с TTL из `INJECTION_MAX_TTL_S` (инъекции не действуют).
+    с TTL из `INJECTION_MAX_TTL_S` (инъекции не действуют). `metrics` — счётчики
+    сервера (TASK-703); без них — собственные (web-слой их не увидит).
     """
     return LimitedTcpServer(
         context,
@@ -313,6 +333,7 @@ def create_server(
         injections=injections
         if injections is not None
         else InjectionRegistry(max_ttl_s=config.INJECTION_MAX_TTL_S),
+        metrics=metrics,
     )
 
 
@@ -321,12 +342,14 @@ async def serve(
     config: Config,
     context: SlaveMapContext | None = None,
     injections: InjectionRegistry | None = None,
+    metrics: ServerMetrics | None = None,
 ) -> AsyncIterator[ModbusTcpServer]:
     """Запустить сервер на время блока, затем graceful shutdown."""
     server = create_server(
         config,
         context if context is not None else build_context(),
         injections,
+        metrics,
     )
     await server.serve_forever(background=True)
     log.info(
@@ -345,7 +368,8 @@ async def run_server(
     config: Config,
     context: SlaveMapContext | None = None,
     injections: InjectionRegistry | None = None,
+    metrics: ServerMetrics | None = None,
 ) -> None:
     """Запустить сервер и работать до отмены задачи (graceful shutdown)."""
-    async with serve(config, context, injections):
+    async with serve(config, context, injections, metrics):
         await asyncio.Event().wait()

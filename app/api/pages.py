@@ -137,6 +137,46 @@ document.getElementById("ping-run").addEventListener("click", async function () 
 """
 
 
+#: Панель «Счётчики сервера» (TASK-703). Обычная строка (без f-префикса):
+#: фигурные скобки JS остаются литеральными.
+_METRICS_PANEL = """
+<h2>Счётчики сервера</h2>
+<dl>
+  <dt>Активные соединения</dt><dd id="metrics-conn">—</dd>
+  <dt>Запросы / с</dt><dd id="metrics-req">—</dd>
+  <dt>Ошибки / с</dt><dd id="metrics-err">—</dd>
+  <dt>Всего запросов</dt><dd id="metrics-req-total">—</dd>
+  <dt>Всего ошибок</dt><dd id="metrics-err-total">—</dd>
+  <dt>Uptime</dt><dd id="metrics-uptime">—</dd>
+</dl>
+<p class="note">Скорости — усреднение за скользящее окно; ошибками считаются
+ответы с exception-кодом и запросы, поглощённые timeout-инъекциями.</p>
+<script>
+async function refreshMetrics() {
+  try {
+    var response = await fetch("/api/modbus/metrics");
+    if (!response.ok) return;
+    var body = await response.json();
+    document.getElementById("metrics-conn").textContent = body.active_connections;
+    document.getElementById("metrics-req").textContent = body.req_per_s.toFixed(2);
+    document.getElementById("metrics-err").textContent = body.err_per_s.toFixed(2);
+    document.getElementById("metrics-req-total").textContent = body.requests_total;
+    document.getElementById("metrics-err-total").textContent = body.errors_total;
+    var uptime = Math.floor(body.uptime_s);
+    var h = Math.floor(uptime / 3600);
+    var m = Math.floor((uptime % 3600) / 60);
+    var s = uptime % 60;
+    document.getElementById("metrics-uptime").textContent = h + " ч " + m + " мин " + s + " с";
+  } catch (error) {
+    /* сбой поллинга — следующий тик повторит запрос */
+  }
+}
+refreshMetrics();
+setInterval(refreshMetrics, 1000);
+</script>
+"""
+
+
 def _index_body(host: str, port: int) -> str:
     return f"""
 <h2>Как подключиться</h2>
@@ -147,6 +187,7 @@ def _index_body(host: str, port: int) -> str:
   <dt>Функции</dt><dd><code>1, 2, 3, 4, 5, 6, 16</code> — остальные отклоняются</dd>
 </dl>
 {_PING_PANEL}
+{_METRICS_PANEL}
 
 <h2>Форматы данных по слейвам</h2>
 {_formats_table()}

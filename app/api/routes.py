@@ -18,6 +18,7 @@ from app.api.models import (
     InjectionOut,
     JournalEntryOut,
     JournalResponse,
+    MetricsResponse,
     PingIn,
     PingResponse,
     ResetIn,
@@ -586,6 +587,25 @@ async def post_ping(
         rtt_avg_ms=result.rtt_avg_ms,
         rtt_max_ms=result.rtt_max_ms,
         last_error=result.last_error,
+    )
+
+
+@router.get("/metrics", response_model=MetricsResponse)
+def get_metrics(services: ServicesDep) -> MetricsResponse:
+    """Счётчики Modbus-сервера (TASK-703).
+
+    Активные соединения, нарастающие итоги запросов/ошибок, скорости за
+    скользящее окно и uptime (см. `app.modbus.metrics`). UI поллит эндпоинт;
+    быстрый read-only, без лимитов и журнала.
+    """
+    snapshot = services.metrics.snapshot()
+    return MetricsResponse(
+        active_connections=snapshot.active_connections,
+        requests_total=snapshot.requests_total,
+        errors_total=snapshot.errors_total,
+        req_per_s=snapshot.req_per_s,
+        err_per_s=snapshot.err_per_s,
+        uptime_s=snapshot.uptime_s,
     )
 
 
