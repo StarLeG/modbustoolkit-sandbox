@@ -133,6 +133,37 @@ class Snapshot(BaseModel):
     slaves: dict[int, dict[Area, dict[str, int | float | bool]]]
 
 
+class SnapshotDiffIn(BaseModel):
+    """Пара снимков для сравнения (TASK-744): `a` — «до», `b` — «после»."""
+
+    a: Snapshot
+    b: Snapshot
+
+
+class SnapshotDiffRow(BaseModel):
+    """Одно различие снимков: значение по адресу в A и B (TASK-744).
+
+    `None` — записи нет в этом снимке (значение добавилось или пропало).
+    """
+
+    slave: int
+    area: Area
+    address: int
+    a: int | float | bool | None
+    b: int | float | bool | None
+
+
+class SnapshotDiffResponse(BaseModel):
+    """Дифф снимков: только различия + число совпавших значений (TASK-744).
+
+    `rows` — по порядку slave → area → address; `same` — значений, которые
+    совпали в обоих снимках (в таблицу не попадают).
+    """
+
+    rows: list[SnapshotDiffRow]
+    same: int
+
+
 class JournalEntryOut(BaseModel):
     """Запись журнала (TASK-308, TASK-505).
 

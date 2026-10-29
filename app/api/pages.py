@@ -209,14 +209,16 @@ def _stub_body(title: str) -> str:
 
 
 def _tools_body() -> str:
-    """Инструменты наладчика: конвертер байт/слов (TASK-741) + генератор конфигов (TASK-742).
+    """Инструменты наладчика: конвертер (TASK-741), генератор конфигов (TASK-742),
+    дифф снимков (TASK-744).
 
     Конвертер: значение ↔ пара регистров во всех 4 порядках (ABCD/CDAB/BADC/DCBA)
     для uint32 и float; пересчёт — серверный (`POST /api/modbus/convert`, тот же
     кодек, что и у слейвов 2..9). Генератор: готовые настройки/скрипты/flow для
     Modbus Poll, QModMaster, CAS Scanner, pyModbus и Node-RED
-    (`POST /api/modbus/configgen`). Наполняют `static/tools.js` и
-    `static/configgen.js`.
+    (`POST /api/modbus/configgen`). Дифф: сравнение двух снимков состояния
+    (`POST /api/modbus/snapshot/diff`). Наполняют `static/tools.js`,
+    `static/configgen.js` и `static/snapshot-diff.js`.
     """
     slave_options = "".join(f"<option>{slave_id}</option>" for slave_id in SLAVE_SPECS)
     return (
@@ -283,8 +285,33 @@ def _tools_body() -> str:
         '  <span id="cfg-status" role="status"></span>\n'
         "</p>\n"
         '<pre id="cfg-output"></pre>\n'
+        "\n"
+        "<h2>Дифф двух снимков</h2>\n"
+        '<p class="note">Сравнивает два снимка состояния (<code>POST '
+        "/api/modbus/snapshot</code>): в таблицу попадают только различия — "
+        "изменённые, добавленные и пропавшие значения; «—» означает, что "
+        "записи в этом снимке нет. Снимки можно снять кнопкой ниже "
+        "(файлы-версии сравниваются между собой).</p>\n"
+        "<p>\n"
+        '  <label>Снимок A <input id="diff-file-a" type="file" '
+        'accept=".json,application/json"></label>\n'
+        '  <label>Снимок B <input id="diff-file-b" type="file" '
+        'accept=".json,application/json"></label>\n'
+        "</p>\n"
+        "<p>\n"
+        '  <button id="diff-compare" type="button">Сравнить</button>\n'
+        '  <button id="diff-snapshot" type="button">Снять текущий снимок</button>\n'
+        '  <span id="diff-status" role="status"></span>\n'
+        "</p>\n"
+        '<p id="diff-summary"></p>\n'
+        '<table class="values">\n'
+        "  <thead><tr><th>Unit ID</th><th>Область</th><th>Адрес</th>"
+        "<th>A</th><th>B</th></tr></thead>\n"
+        '  <tbody id="diff-rows"></tbody>\n'
+        "</table>\n"
         '<script type="module" src="/static/tools.js"></script>\n'
-        '<script type="module" src="/static/configgen.js"></script>'
+        '<script type="module" src="/static/configgen.js"></script>\n'
+        '<script type="module" src="/static/snapshot-diff.js"></script>'
     )
 
 

@@ -34,6 +34,9 @@ from app.api.models import (
     ResetResponse,
     RestoreResponse,
     Snapshot,
+    SnapshotDiffIn,
+    SnapshotDiffResponse,
+    SnapshotDiffRow,
     StateResponse,
     WriteIn,
     WriteResponse,
@@ -369,6 +372,60 @@ def post_snapshot(services: ServicesDep) -> Snapshot:
     for slave_id, smap in services.maps.items():
         slaves[slave_id] = {a: area_values(smap, a) for a in AREAS if smap.spec.area_ranges(a)}
     return Snapshot(slaves=slaves)
+
+
+def _diff_snapshots(a: Snapshot, b: Snapshot) -> tuple[list[SnapshotDiffRow], int]:
+    """Различия снимков: строки только для несовпавших значений + счётчик совпавших.
+
+    `None` в строке — записи нет в этом снимке (значение добавилось/пропало).
+    Порядок строк: slave → area → address.
+    """
+    rows: list[SnapshotDiffRow] = []
+    same = 0
+    for slave in sorted(set(a.slaves) | set(b.slaves)):
+        areas_a = a.slaves.get(slave, {})
+        areas_b = b.slaves.get(slave, {})
+        for area in AREAS:
+            values_a = areas_a.get(area, {})
+            values_b = areas_b.get(area, {})
+            for address_str in sorted(set(values_a) | set(values_b), key=int):
+                value_a = values_a.get(address_str)
+                value_b = values_b.get(address_str)
+                if (
+                    address_str in values_a
+                    and address_str in values_b
+                    and value_a == value_b
+                ):
+                    same += 1
+                    continue
+                rows.append(
+                    SnapshotDiffRow(
+                        slave=slave,
+                        area=area,
+                        address=int(address_str),
+                        a=value_a,
+                        b=value_b,
+                    )
+                )
+    return rows, same
+
+
+@router.post("/snapshot/diff", response_model=SnapshotDiffResponse)
+def post_snapshot_diff(body: SnapshotDiffIn) -> SnapshotDiffResponse:
+    """Дифф двух снимков состояния (TASK-744).
+
+    `a` — «до», `b` — «после»; в ответе только различия (изменённые,
+    добавленные, пропавшие значения) и число совпавших. Чистая функция:
+    без состояния, лимитов и журнала. Версия снимка ≠ 1 → 400 (как в restore).
+    """
+    for name, snapshot in (("a", body.a), ("b", body.b)):
+        if snapshot.version != 1:
+            raise HTTPException(
+                status_code=400,
+                detail=f"неподдерживаемая версия снимка {name}: {snapshot.version}",
+            )
+    rows, same = _diff_snapshots(body.a, body.b)
+    return SnapshotDiffResponse(rows=rows, same=same)
 
 
 @router.post("/restore", response_model=RestoreResponse)
