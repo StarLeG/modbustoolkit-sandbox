@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import random
 
+import pytest
+
 from app.modbus.behavior import Behavior, Binding
 from app.modbus.generators import ConstantGenerator, create_generator
 
@@ -59,3 +61,70 @@ def test_constant_bit() -> None:
 def test_constant_default_zero() -> None:
     assert _gen("constant").update(0.0) == 0
     assert _gen("constant", area="cl").update(0.0) is False
+
+
+# --- TASK-212: counter -----------------------------------------------------------------
+
+
+def test_counter_default_steps_once_per_second() -> None:
+    gen = _gen("counter")
+    assert gen.update(0.0) == 0
+    assert gen.update(0.99) == 0
+    assert gen.update(1.0) == 1
+    assert gen.update(2.5) == 2
+
+
+def test_counter_step_start_interval() -> None:
+    gen = _gen("counter", {"start": 10, "step": 5, "interval_s": 0.1})
+    assert gen.update(0.0) == 10
+    assert gen.update(0.1) == 15
+    assert gen.update(0.25) == 20
+
+
+def test_counter_saturates_without_wrap() -> None:
+    gen = _gen("counter", {"start": 4, "step": 1, "min": 0, "max": 5, "wrap": False})
+    assert gen.update(1.0) == 5
+    assert gen.update(9.0) == 5
+
+
+def test_counter_wraps_after_max() -> None:
+    gen = _gen("counter", {"start": 5, "step": 1, "min": 0, "max": 5, "wrap": True})
+    assert gen.update(0.0) == 5
+    assert gen.update(1.0) == 0
+    assert gen.update(2.0) == 1
+
+
+def test_counter_negative_step_wraps_to_max() -> None:
+    gen = _gen("counter", {"start": 1, "step": -1, "min": 0, "max": 5, "wrap": True})
+    assert gen.update(0.0) == 1
+    assert gen.update(1.0) == 0
+    assert gen.update(2.0) == 5
+
+
+def test_counter_negative_step_saturates_at_min() -> None:
+    gen = _gen("counter", {"start": 1, "step": -1, "min": 0, "max": 5, "wrap": False})
+    assert gen.update(2.0) == 0
+    assert gen.update(9.0) == 0
+
+
+def test_counter_float_params() -> None:
+    gen = _gen(
+        "counter",
+        {"start": 0.0, "step": 0.5, "min": 0.0, "max": 1.5, "wrap": True, "interval_s": 1},
+    )
+    assert gen.update(0.0) == 0.0
+    assert gen.update(1.0) == 0.5
+    assert gen.update(3.0) == 1.5
+    assert gen.update(4.0) == 0.0  # цикл: span = max - min + step = 2.0
+
+
+def test_counter_interval_must_be_positive() -> None:
+    with pytest.raises(ValueError, match="interval_s"):
+        _gen("counter", {"interval_s": 0})
+    with pytest.raises(ValueError, match="interval_s"):
+        _gen("counter", {"interval_s": -1})
+
+
+def test_counter_min_max_validation() -> None:
+    with pytest.raises(ValueError, match="max"):
+        _gen("counter", {"min": 5, "max": 1})
