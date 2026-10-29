@@ -34,3 +34,12 @@ def test_index_shows_connection_info() -> None:
     html = response.text
     assert "5020" in html  # порт Modbus
     assert "1..10" in html  # диапазон unit ID
+
+
+def test_index_has_clear_injections_button() -> None:
+    """Кнопка «Сбросить инъекции» → REST /inject/clear (TASK-605)."""
+    with _client() as client:
+        response = client.get("/")
+    html = response.text
+    assert "Сбросить инъекции" in html
+    assert "/api/modbus/inject/clear" in html

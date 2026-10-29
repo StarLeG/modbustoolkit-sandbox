@@ -27,6 +27,37 @@ WARNING_BANNER = (
 )
 
 
+#: Панель «Инъекции ошибок» с кнопкой сброса (TASK-605). Обычная строка (без
+#: f-префикса): фигурные скобки JS остаются литеральными.
+_INJECTIONS_PANEL = """
+<h2>Инъекции ошибок</h2>
+<p>Инъекции (exception / delay / timeout) регистрируются через REST
+<code>POST /api/modbus/inject</code> и действуют не дольше
+<code>INJECTION_MAX_TTL_S</code>. Кнопка снимает все активные инъекции:</p>
+<p><button id="clear-injections" type="button">Сбросить инъекции</button></p>
+<p id="clear-result" role="status"></p>
+<script>
+document.getElementById("clear-injections").addEventListener("click", async function () {
+  var result = document.getElementById("clear-result");
+  result.textContent = "Снятие…";
+  try {
+    var response = await fetch("/api/modbus/inject/clear", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: "{}"
+    });
+    var body = await response.json();
+    result.textContent = response.ok
+      ? "Снято инъекций: " + body.cleared
+      : "Ошибка " + response.status;
+  } catch (error) {
+    result.textContent = "Ошибка: " + error;
+  }
+});
+</script>
+"""
+
+
 def _page(host: str, port: int) -> str:
     return f"""<!DOCTYPE html>
 <html lang="ru">
@@ -62,6 +93,8 @@ def _page(host: str, port: int) -> str:
   <dt>Unit ID</dt><dd><code>1..10</code> (slave 10 — только input registers)</dd>
   <dt>Функции</dt><dd><code>1, 2, 3, 4, 5, 6, 16</code> — остальные отклоняются</dd>
 </dl>
+
+{_INJECTIONS_PANEL}
 
 <p>Поведения регистров, инъекции ошибок и live-состояние — в web-интерфейсе.</p>
 </body>
