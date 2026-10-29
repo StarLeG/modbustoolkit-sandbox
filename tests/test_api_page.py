@@ -51,6 +51,18 @@ def test_injections_page_has_clear_button() -> None:
     assert "/api/modbus/inject/clear" in html
 
 
+def test_index_has_ping_panel() -> None:
+    """Панель «Проверить соединение» с пробой через REST (TASK-702)."""
+    with _client() as client:
+        response = client.get("/")
+    html = response.text
+    assert "Проверить соединение" in html
+    assert "/api/modbus/ping" in html
+    assert 'id="ping-slave"' in html
+    for unit_id in range(1, 11):
+        assert f"<option>{unit_id}</option>" in html
+
+
 def test_index_has_formats_table() -> None:
     """Таблица форматов и адресов unit ID 1..10 (TASK-701, HRIR_SPEC)."""
     with _client() as client:

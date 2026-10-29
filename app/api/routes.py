@@ -18,6 +18,8 @@ from app.api.models import (
     InjectionOut,
     JournalEntryOut,
     JournalResponse,
+    PingIn,
+    PingResponse,
     ResetIn,
     ResetResponse,
     RestoreResponse,
@@ -38,6 +40,7 @@ from app.modbus.behavior import (
 from app.modbus.codec import clamp_value, encode
 from app.modbus.injection import Injection
 from app.modbus.journal import JournalEntry
+from app.modbus.ping import probe_slave
 from app.modbus.slave_map import ModbusMapError
 from app.modbus.types import AREAS, SLAVE_SPECS, Area
 
@@ -551,6 +554,39 @@ def post_inject_clear(
             )
         )
     return InjectClearResponse(cleared=cleared)
+
+
+@router.post("/ping", response_model=PingResponse)
+async def post_ping(
+    request: Request,
+    body: PingIn,
+    services: ServicesDep,
+) -> PingResponse:
+    """Проба соединения: серверный опрос выбранного slave (TASK-702).
+
+    Сервер через loopback делает `count` контрольных чтений slave и возвращает
+    min/avg/max RTT и число успешных/ошибочных попыток (см. `app.modbus.ping`).
+    Ограничение действий из UI — тот же лимит `WEB_MAX_WRITE_PER_MIN_PER_IP`
+    на IP (429, ADR-004 п. 4); проба не пишет в регистры и не журналируется
+    (анти-флуд журнала). Async-роут: опрос не занимает threadpool.
+    """
+    ip = _client_ip(request) or ""
+    if not services.write_limiter.allow(ip):
+        raise HTTPException(
+            status_code=429,
+            detail="слишком много запросов из UI, повторите позже",
+        )
+    result = await probe_slave(services.config, body.slave, body.count)
+    return PingResponse(
+        slave=result.slave,
+        attempts=result.attempts,
+        ok=result.ok,
+        errors=result.errors,
+        rtt_min_ms=result.rtt_min_ms,
+        rtt_avg_ms=result.rtt_avg_ms,
+        rtt_max_ms=result.rtt_max_ms,
+        last_error=result.last_error,
+    )
 
 
 #: Healthcheck — вне префикса /api/modbus (ADR-004 п. 1).

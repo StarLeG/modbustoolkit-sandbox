@@ -84,6 +84,59 @@ def _formats_table() -> str:
     )
 
 
+#: Панель «Проверить соединение» (TASK-702). Обычная строка (без f-префикса):
+#: фигурные скобки JS остаются литеральными.
+_PING_PANEL = """
+<h2>Проверить соединение</h2>
+<p>Сервер делает 5 контрольных чтений выбранного slave через Modbus-TCP
+(loopback) и показывает RTT — так проверяются TCP, протокол и карта регистров
+сразу. Проба ничего не пишет и не попадает в журнал.</p>
+<p>
+  <label>Unit ID
+    <select id="ping-slave">
+      <option>1</option><option>2</option><option>3</option><option>4</option>
+      <option>5</option><option>6</option><option>7</option><option>8</option>
+      <option>9</option><option>10</option>
+    </select>
+  </label>
+  <button id="ping-run" type="button">Проверить соединение</button>
+</p>
+<p id="ping-result" role="status"></p>
+<script>
+document.getElementById("ping-run").addEventListener("click", async function () {
+  var result = document.getElementById("ping-result");
+  var slave = document.getElementById("ping-slave").value;
+  result.textContent = "Проба…";
+  try {
+    var response = await fetch("/api/modbus/ping", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({slave: Number(slave), count: 5})
+    });
+    var body = await response.json();
+    if (!response.ok) {
+      result.textContent = "Ошибка " + response.status + ": " + (body.detail || "");
+      return;
+    }
+    var text = "Успехов: " + body.ok + ", ошибок: " + body.errors + ".";
+    if (body.ok > 0) {
+      text += " RTT min/avg/max: "
+        + body.rtt_min_ms.toFixed(2) + " / "
+        + body.rtt_avg_ms.toFixed(2) + " / "
+        + body.rtt_max_ms.toFixed(2) + " мс.";
+    }
+    if (body.last_error) {
+      text += " Последняя ошибка: " + body.last_error;
+    }
+    result.textContent = text;
+  } catch (error) {
+    result.textContent = "Ошибка: " + error;
+  }
+});
+</script>
+"""
+
+
 def _index_body(host: str, port: int) -> str:
     return f"""
 <h2>Как подключиться</h2>
@@ -93,6 +146,7 @@ def _index_body(host: str, port: int) -> str:
   <dt>Unit ID</dt><dd><code>1..10</code> (slave 10 — только input registers)</dd>
   <dt>Функции</dt><dd><code>1, 2, 3, 4, 5, 6, 16</code> — остальные отклоняются</dd>
 </dl>
+{_PING_PANEL}
 
 <h2>Форматы данных по слейвам</h2>
 {_formats_table()}

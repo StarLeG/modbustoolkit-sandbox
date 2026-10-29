@@ -220,6 +220,35 @@ class InjectClearResponse(BaseModel):
     cleared: int
 
 
+class PingIn(BaseModel):
+    """Параметры пробы соединения (TASK-702).
+
+    `count` — число контрольных чтений (1..10, ограничение пробы —
+    `app.modbus.ping.MAX_ATTEMPTS`).
+    """
+
+    slave: int = Field(ge=1, le=10)
+    count: int = Field(default=5, ge=1, le=10)
+
+
+class PingResponse(BaseModel):
+    """Итог пробы соединения (TASK-702).
+
+    `ok` / `errors` — число успешных и неудачных попыток; `rtt_*_ms` —
+    min/avg/max по успешным ответам (None, если успехов не было);
+    `last_error` — последняя ошибка попытки.
+    """
+
+    slave: int
+    attempts: int
+    ok: int
+    errors: int
+    rtt_min_ms: float | None
+    rtt_avg_ms: float | None
+    rtt_max_ms: float | None
+    last_error: str | None
+
+
 class HealthzResponse(BaseModel):
     """Ответ healthcheck (TASK-310)."""
 
