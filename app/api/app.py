@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.api.routes import router
+from app.api.routes import health_router, router
 from app.api.services import AppServices, build_services
 from app.modbus.config import Config
 
@@ -43,4 +43,5 @@ def create_app(
     app = FastAPI(title="modbustoolkit.electroman.by", lifespan=lifespan)
     app.state.services = services
     app.include_router(router)
+    app.include_router(health_router)
     return app

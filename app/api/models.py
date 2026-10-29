@@ -218,3 +218,9 @@ class InjectClearResponse(BaseModel):
     """Число снятых инъекций."""
 
     cleared: int
+
+
+class HealthzResponse(BaseModel):
+    """Ответ healthcheck (TASK-310)."""
+
+    status: str

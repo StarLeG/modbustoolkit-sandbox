@@ -106,7 +106,7 @@
 - [x] [P1] **TASK-307 · `POST /api/modbus/snapshot` / `restore`** — JSON state
 - [x] [P1] **TASK-308 · `GET /api/modbus/journal?limit=…`** — ring buffer
 - [x] [P1] **TASK-309 · `POST /api/modbus/inject` / `POST …/inject/clear`**
-- [ ] [P0] **TASK-310 · `GET /healthz`**
+- [x] [P0] **TASK-310 · `GET /healthz`**
 
 ---
 

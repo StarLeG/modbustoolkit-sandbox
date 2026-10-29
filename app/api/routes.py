@@ -11,6 +11,7 @@ from app.api.models import (
     BehaviorIn,
     BehaviorOut,
     BehaviorsResponse,
+    HealthzResponse,
     InjectClearIn,
     InjectClearResponse,
     InjectionIn,
@@ -582,3 +583,17 @@ def post_inject_clear(
             )
         )
     return InjectClearResponse(cleared=cleared)
+
+
+#: Healthcheck — вне префикса /api/modbus (ADR-004 п. 1).
+health_router = APIRouter()
+
+
+@health_router.get("/healthz", response_model=HealthzResponse)
+def get_healthz() -> HealthzResponse:
+    """Проверка живости процесса (TASK-310).
+
+    Используется healthcheck-ом деплоя (TASK-903) и мониторингом; отвечает
+    быстро и без побочных эффектов — только подтверждает, что event loop жив.
+    """
+    return HealthzResponse(status="ok")
