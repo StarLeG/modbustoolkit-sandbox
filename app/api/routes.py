@@ -1,7 +1,8 @@
 """REST-роуты `/api/modbus/*` (Эпик 3, ADR-004)."""
 from __future__ import annotations
 
-from typing import Annotated
+import math
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 
@@ -11,6 +12,9 @@ from app.api.models import (
     BehaviorIn,
     BehaviorOut,
     BehaviorsResponse,
+    ConvertIn,
+    ConvertResponse,
+    ConvertRow,
     HealthzResponse,
     InjectClearIn,
     InjectClearResponse,
@@ -38,12 +42,12 @@ from app.modbus.behavior import (
     check_kind_for_area,
     default_behavior,
 )
-from app.modbus.codec import clamp_value, encode
+from app.modbus.codec import clamp_value, decode, encode
 from app.modbus.injection import Injection
 from app.modbus.journal import JournalEntry
 from app.modbus.ping import probe_slave
 from app.modbus.slave_map import ModbusMapError
-from app.modbus.types import AREAS, SLAVE_SPECS, Area
+from app.modbus.types import AREAS, SLAVE_SPECS, Area, RegisterFormat
 
 router = APIRouter(prefix="/api/modbus")
 
@@ -588,6 +592,73 @@ async def post_ping(
         rtt_max_ms=result.rtt_max_ms,
         last_error=result.last_error,
     )
+
+
+#: Порядки конвертера (TASK-741) — все 4, как в `RegisterFormat`.
+_CONVERT_ORDERS: tuple[Literal["ABCD", "CDAB", "BADC", "DCBA"], ...] = ("ABCD", "CDAB", "BADC", "DCBA")
+
+
+def _convert_value(value: float, kind: Literal["uint32", "float"]) -> int | float:
+    """Нормализовать значение конвертера: uint32 — целое в диапазоне, float — конечный."""
+    if kind == "uint32":
+        if isinstance(value, bool) or not float(value).is_integer():
+            raise HTTPException(status_code=400, detail="uint32 требует целого значения")
+        int_value = int(value)
+        if not 0 <= int_value <= 0xFFFFFFFF:
+            raise HTTPException(status_code=400, detail="uint32 вне диапазона 0..4294967295")
+        return int_value
+    float_value = float(value)
+    if not math.isfinite(float_value):
+        raise HTTPException(status_code=400, detail="NaN/Inf недопустимы")
+    return float_value
+
+
+def _finite(value: float) -> int | float | str:
+    """NaN/Inf в JSON не сериализуются — для float-раскладок отдаём строками."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return "NaN" if math.isnan(value) else ("inf" if value > 0 else "-inf")
+    return value
+
+
+@router.post("/convert", response_model=ConvertResponse)
+def post_convert(body: ConvertIn) -> ConvertResponse:
+    """Конвертер байт/слов: значение ↔ регистры в 4 порядках (TASK-741).
+
+    Ровно одно из полей входа: `value` — значение (uint32/float) переводится
+    в пару регистров для каждого порядка ABCD/CDAB/BADC/DCBA; `regs` — пара
+    регистров переводится в значение для каждого порядка. Пересчёт — кодексом
+    `app.modbus.codec`, поэтому результат совпадает с поведением слейвов 2..9.
+    Чистая функция: без состояния, лимитов и журнала.
+    """
+    if body.value is not None and body.regs is not None:
+        raise HTTPException(status_code=400, detail="укажите value или regs, но не оба")
+    rows: list[ConvertRow] = []
+    if body.value is not None:
+        value = _convert_value(body.value, body.kind)
+        for order in _CONVERT_ORDERS:
+            fmt = RegisterFormat(f"{body.kind}_{order.lower()}")
+            try:
+                regs = encode(value, fmt)
+            except (TypeError, ValueError) as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            rows.append(
+                ConvertRow(
+                    order=order,
+                    regs=(regs[0], regs[1]),
+                    value=_finite(decode(regs, fmt)),
+                )
+            )
+    elif body.regs is not None:
+        for order in _CONVERT_ORDERS:
+            fmt = RegisterFormat(f"{body.kind}_{order.lower()}")
+            try:
+                decoded = decode(body.regs, fmt)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            rows.append(ConvertRow(order=order, regs=body.regs, value=_finite(decoded)))
+    else:
+        raise HTTPException(status_code=400, detail="укажите value или regs")
+    return ConvertResponse(kind=body.kind, rows=rows)
 
 
 @router.get("/metrics", response_model=MetricsResponse)

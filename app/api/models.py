@@ -1,7 +1,7 @@
 """Pydantic-схемы REST (Эпик 3, ADR-004 п. 5)."""
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -268,3 +268,38 @@ class HealthzResponse(BaseModel):
     """Ответ healthcheck (TASK-310)."""
 
     status: str
+
+
+class ConvertIn(BaseModel):
+    """Вход конвертера байт/слов (TASK-741).
+
+    Ровно одно из полей: `value` — значение (uint32 или float) для перевода
+    в регистры, `regs` — два регистра (слова) для перевода в значение.
+    Порядок — все четыре: ABCD, CDAB, BADC, DCBA.
+    """
+
+    kind: Literal["uint32", "float"]
+    value: int | float | None = None
+    regs: tuple[int, int] | None = None
+
+
+class ConvertRow(BaseModel):
+    """Строка таблицы конвертации: значение ↔ регистры в одном порядке.
+
+    `value` — строкой только NaN/inf/-inf (в JSON они не сериализуются).
+    """
+
+    order: Literal["ABCD", "CDAB", "BADC", "DCBA"]
+    regs: tuple[int, int]
+    value: int | float | str
+
+
+class ConvertResponse(BaseModel):
+    """Таблица конвертации по всем 4 порядкам (TASK-741).
+
+    При входе `value` регистры строк различаются (значение одно), при входе
+    `regs` — различаются значения (регистры одни).
+    """
+
+    kind: Literal["uint32", "float"]
+    rows: list[ConvertRow]

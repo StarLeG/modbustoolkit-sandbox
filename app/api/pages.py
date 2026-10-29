@@ -207,6 +207,50 @@ def _stub_body(title: str) -> str:
     return f"<h2>{escape(title)}</h2><p>Раздел в разработке.</p>"
 
 
+def _tools_body() -> str:
+    """Инструменты наладчика: конвертер байт/слов (TASK-741).
+
+    Значение ↔ пара регистров во всех 4 порядках (ABCD/CDAB/BADC/DCBA) для
+    uint32 и float. Пересчёт — серверный (`POST /api/modbus/convert`, тот же
+    кодек, что и у слейвов 2..9), поэтому таблица совпадает с реальным
+    поведением сервера. Наполняет `static/tools.js`.
+    """
+    return (
+        "<h2>Конвертер байт/слов</h2>\n"
+        '<p class="note">Показывает, в какие два регистра кодируется значение и '
+        "какое значение читается из двух регистров — во всех четырёх порядках: "
+        "<code>ABCD</code>, <code>CDAB</code>, <code>BADC</code>, <code>DCBA</code>. "
+        "Пересчёт выполняет сервер тем же кодеком, что и слейвы 2..9 "
+        "(<code>docs/HRIR_SPEC.md</code>).</p>\n"
+        "<p>\n"
+        '  <label>Тип <select id="tool-kind">\n'
+        '    <option value="uint32">uint32</option>\n'
+        '    <option value="float">float</option>\n'
+        "  </select></label>\n"
+        '  <label>Что вводим <select id="tool-source">\n'
+        '    <option value="value">Значение</option>\n'
+        '    <option value="regs">Два регистра</option>\n'
+        "  </select></label>\n"
+        "</p>\n"
+        "<p>\n"
+        '  <label>Значение <input id="tool-value" type="text" '
+        'placeholder="например 3.5 или 0x12345678"></label>\n'
+        '  <label>Регистр 1 <input id="tool-reg-hi" type="text" placeholder="0x1234"></label>\n'
+        '  <label>Регистр 2 <input id="tool-reg-lo" type="text" placeholder="0x5678"></label>\n'
+        "</p>\n"
+        "<p>\n"
+        '  <button id="tool-convert" type="button">Конвертировать</button>\n'
+        '  <span id="tool-status" role="status"></span>\n'
+        "</p>\n"
+        '<table class="values">\n'
+        "  <thead><tr><th>Порядок</th><th>Регистры (hex)</th><th>Регистры (dec)</th>"
+        "<th>Значение</th></tr></thead>\n"
+        '  <tbody id="tool-rows"></tbody>\n'
+        "</table>\n"
+        '<script type="module" src="/static/tools.js"></script>'
+    )
+
+
 def _register_map_json() -> str:
     """Геометрия карты для JS (TASK-711): slave → fmt + диапазоны областей.
 
@@ -504,8 +548,8 @@ def get_injections_page() -> HTMLResponse:
 
 @pages_router.get("/tools", response_class=HTMLResponse)
 def get_tools() -> HTMLResponse:
-    """Инструменты наладчика (TASK-741…742) — заглушка до наполнения."""
-    return HTMLResponse(_shell("Инструменты", "/tools", _stub_body("Инструменты наладчика")))
+    """Инструменты наладчика: конвертер байт/слов (TASK-741); генератор конфигов — TASK-742."""
+    return HTMLResponse(_shell("Инструменты", "/tools", _tools_body()))
 
 
 @pages_router.get("/docs", response_class=HTMLResponse)
