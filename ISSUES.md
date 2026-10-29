@@ -73,7 +73,7 @@
 - [x] [P1] **TASK-216 · sine** (`min, max, period_s, phase`)
 - [x] [P1] **TASK-217 · random_uniform** (`min, max`)
 - [x] [P1] **TASK-218 · random_walk** (`min, max, step, mean_reversion`)
-- [ ] [P1] **TASK-219 · ramp_oneshot** (`from, to, duration_s, then`)
+- [x] [P1] **TASK-219 · ramp_oneshot** (`from, to, duration_s, then`)
 - [ ] [P1] **TASK-220 · countdown** (`start, step, min`)
 - [ ] [P2] **TASK-221 · step** (`values, interval_s`)
 - [ ] [P2] **TASK-222 · follow** (`source: "hr:15"` — копия другого регистра)

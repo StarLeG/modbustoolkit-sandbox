@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import math
 import random
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from app.modbus.behavior import Behavior, Binding
 
@@ -280,6 +280,57 @@ class RandomWalkGenerator:
         return self._pos
 
 
+class RampOneshotGenerator:
+    """`ramp_oneshot`: линейный переход от `from` к `to` за `duration_s`, затем `then`.
+
+    `then`: `"hold"` — держать `to`; `"loop"` — повторять ramp по кругу;
+    число — перейти на эту константу.
+    """
+
+    is_static = False
+
+    def __init__(
+        self,
+        params: dict[str, Any],
+        binding: Binding,
+        ctx: GeneratorContext,
+        rng: random.Random,
+    ) -> None:
+        _ = binding, ctx, rng
+        self._start = _num(params, "from", 0)
+        self._to = _num(params, "to", 100)
+        self._duration = _positive(params, "duration_s", 10.0)
+        then = params.get("then", "hold")
+        self._mode: Literal["hold", "loop", "value"]
+        self._then_value: int | float = 0
+        if isinstance(then, str):
+            if then == "hold":
+                self._mode = "hold"
+            elif then == "loop":
+                self._mode = "loop"
+            else:
+                raise ValueError(
+                    f"ramp_oneshot: then должен быть 'hold', 'loop' или числом, получено: {then!r}"
+                )
+        elif isinstance(then, bool) or not isinstance(then, (int, float)):
+            raise TypeError(
+                f"ramp_oneshot: then должен быть 'hold', 'loop' или числом, получено: {then!r}"
+            )
+        else:
+            self._mode = "value"
+            self._then_value = then
+
+    def update(self, now: float) -> int | float:
+        if now >= self._duration:
+            if self._mode == "loop":
+                now = now % self._duration
+            elif self._mode == "hold":
+                return self._to
+            else:
+                return self._then_value
+        return self._start + (self._to - self._start) * (now / self._duration)
+
+
 def create_generator(
     behavior: Behavior,
     binding: Binding,
@@ -310,4 +361,6 @@ def create_generator(
         return RandomUniformGenerator(params, binding, ctx, rng)
     if behavior.kind == "random_walk":
         return RandomWalkGenerator(params, binding, ctx, rng)
+    if behavior.kind == "ramp_oneshot":
+        return RampOneshotGenerator(params, binding, ctx, rng)
     raise ValueError(f"поведение {behavior.kind!r} ещё не реализовано")

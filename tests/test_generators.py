@@ -308,3 +308,44 @@ def test_random_walk_validation() -> None:
         _gen("random_walk", {"step": -1})
     with pytest.raises(ValueError, match="mean_reversion"):
         _gen("random_walk", {"mean_reversion": 1.5})
+
+
+# --- TASK-219: ramp_oneshot ------------------------------------------------------------
+
+
+def test_ramp_oneshot_hold() -> None:
+    gen = _gen("ramp_oneshot", {"from": 0, "to": 100, "duration_s": 10, "then": "hold"})
+    assert gen.update(0.0) == 0
+    assert gen.update(5.0) == pytest.approx(50)
+    assert gen.update(10.0) == 100  # держит to
+    assert gen.update(25.0) == 100
+
+
+def test_ramp_oneshot_loop() -> None:
+    gen = _gen("ramp_oneshot", {"from": 0, "to": 100, "duration_s": 10, "then": "loop"})
+    assert gen.update(2.0) == pytest.approx(20)
+    assert gen.update(10.0) == 0  # цикл начинается заново
+    assert gen.update(12.0) == pytest.approx(20)
+
+
+def test_ramp_oneshot_numeric_then() -> None:
+    gen = _gen("ramp_oneshot", {"from": 0, "to": 100, "duration_s": 10, "then": 55})
+    assert gen.update(5.0) == pytest.approx(50)
+    assert gen.update(10.0) == 55
+    assert gen.update(20.0) == 55
+
+
+def test_ramp_oneshot_downhill() -> None:
+    gen = _gen("ramp_oneshot", {"from": 100, "to": 0, "duration_s": 4})
+    assert gen.update(0.0) == 100
+    assert gen.update(2.0) == pytest.approx(50)
+    assert gen.update(4.0) == 0  # then по умолчанию — hold
+
+
+def test_ramp_oneshot_validation() -> None:
+    with pytest.raises(ValueError, match="duration_s"):
+        _gen("ramp_oneshot", {"duration_s": 0})
+    with pytest.raises(ValueError, match="then"):
+        _gen("ramp_oneshot", {"then": "bogus"})
+    with pytest.raises(TypeError, match="then"):
+        _gen("ramp_oneshot", {"then": True})
