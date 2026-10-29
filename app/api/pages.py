@@ -348,8 +348,13 @@ def _behaviors_body() -> str:
         "<th>Параметры</th><th>Locked</th></tr></thead>\n"
         '  <tbody id="bh-list"></tbody>\n'
         "</table>\n"
+        "<h2>Мини-график</h2>\n"
+        '<p class="note">Значение выбранного регистра (Unit ID / Область / Адрес '
+        "выше) за последние 60 с; подписка по WS <code>/ws/state</code>.</p>\n"
+        '<canvas id="bh-chart" width="800" height="160"></canvas>\n'
         "<script>window.REGISTER_MAP = " + _register_map_json() + ";</script>\n"
-        '<script type="module" src="/static/behaviors.js"></script>'
+        '<script type="module" src="/static/behaviors.js"></script>\n'
+        '<script type="module" src="/static/minichart.js"></script>'
     )
 
 

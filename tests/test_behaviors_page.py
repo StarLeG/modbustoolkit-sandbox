@@ -212,3 +212,34 @@ def test_behaviors_js_reset_range_removes_overrides() -> None:
     assert "remove: true" in js
     assert "body.removed" in js
     assert "body.applied" in js
+
+
+def test_behaviors_page_has_minichart() -> None:
+    """Мини-график выбранного регистра за 60 с (TASK-724)."""
+    with _client() as client:
+        response = client.get("/behaviors")
+    html = response.text
+    for fragment in (
+        "Мини-график",
+        'id="bh-chart"',
+        "60",
+        'src="/static/minichart.js"',
+    ):
+        assert fragment in html, fragment
+
+
+def test_minichart_js_served() -> None:
+    """Мини-график: WS-подписка на адрес формы, окно 60 с (TASK-724)."""
+    with _client() as client:
+        response = client.get("/static/minichart.js")
+    assert response.status_code == 200
+    js = response.text
+    for fragment in (
+        "/ws/state",
+        "WINDOW_S",
+        "HISTORY_S",
+        "getContext",
+        "validTarget",
+        'el("bh-address")',
+    ):
+        assert fragment in js, fragment
