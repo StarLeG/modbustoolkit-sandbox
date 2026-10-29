@@ -65,21 +65,29 @@ code {
   border-radius: 4px;
 }
 
-table.formats {
+table.formats,
+table.values {
   border-collapse: collapse;
   width: 100%;
   margin: 1rem 0;
 }
 
 table.formats th,
-table.formats td {
+table.formats td,
+table.values th,
+table.values td {
   border: 1px solid #d1d5db;
   padding: 0.4rem 0.6rem;
   text-align: left;
 }
 
-table.formats th {
+table.formats th,
+table.values th {
   background: #f3f4f6;
+}
+
+#reg-page {
+  margin: 0 0.75rem;
 }
 
 .note {

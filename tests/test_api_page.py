@@ -1,9 +1,10 @@
-"""UI-страницы: плашка «публичный сервер» (TASK-504) и «Обзор» (TASK-701).
+"""UI-страницы: shell, «Обзор», «Карта регистров» (TASK-504, 701, 711).
 
 Обязательный текст плашки — про многопользовательский режим и перезапись
 значений (DoD 10); константа `WARNING_BANNER` — единственный источник текста
 (ADR-008 п. 2). «Обзор» — параметры подключения и таблица форматов unit ID
-1..10 из `SLAVE_SPECS`.
+1..10 из `SLAVE_SPECS`; «Карта регистров» — live-таблица с геометрией
+`REGISTER_MAP` и JS-модулем `static/registers.js`.
 """
 from __future__ import annotations
 
@@ -36,6 +37,43 @@ def test_index_shows_connection_info() -> None:
     html = response.text
     assert "5020" in html  # порт Modbus
     assert "1..10" in html  # диапазон unit ID
+
+
+def test_registers_page_has_table_and_controls() -> None:
+    """«Карта регистров»: таблица, выбор слейва/области, пагинация (TASK-711)."""
+    with _client() as client:
+        response = client.get("/registers")
+    html = response.text
+    for fragment in (
+        'id="reg-slave"',
+        'id="reg-area"',
+        'id="reg-body"',
+        'id="reg-prev"',
+        'id="reg-next"',
+        "window.REGISTER_MAP",
+        'src="/static/registers.js"',
+    ):
+        assert fragment in html, fragment
+
+
+def test_registers_page_register_map_geometry() -> None:
+    """REGISTER_MAP несёт сетку значений из SLAVE_SPECS (TASK-711)."""
+    with _client() as client:
+        response = client.get("/registers")
+    html = response.text
+    assert "[[1, 1024, 1]]" in html  # slave 1: сплошная сетка
+    assert "[[1, 1023, 2]]" in html  # слейвы 2..9: шаг 2
+    assert "[[1, 268, 1], [300, 301, 1]]" in html  # slave 10: IR + timestamp
+    assert '"fmt"' in html
+
+
+def test_registers_js_served() -> None:
+    """JS-модуль карты регистров отдаётся со статики (ADR-008 п. 3)."""
+    with _client() as client:
+        response = client.get("/static/registers.js")
+    assert response.status_code == 200
+    assert "/ws/state" in response.text
+    assert "/api/modbus/state" in response.text
 
 
 def test_injections_page_has_clear_button() -> None:

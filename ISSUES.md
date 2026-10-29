@@ -150,7 +150,7 @@
 - [x] [P1] **TASK-703 · Счётчики** (active connections, req/s, err/s, uptime)
 
 ### 7.2 Карта регистров
-- [ ] [P0] **TASK-711 · Таблица адресов по слейву** (live, WS)
+- [x] [P0] **TASK-711 · Таблица адресов по слейву** (live, WS)
 - [ ] [P0] **TASK-712 · Форматирование** HEX / DEC / FLOAT / signed / unsigned — по формату слейва
 - [ ] [P0] **TASK-713 · Inline-редактор CL/HR** с плашкой про перезапись
 - [ ] [P1] **TASK-714 · Watch list** (localStorage, WS-подписка)

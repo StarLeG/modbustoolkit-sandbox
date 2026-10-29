@@ -8,13 +8,14 @@ Shell — общий каркас всех страниц: навигация п
 """
 from __future__ import annotations
 
+import json
 from html import escape
 
 from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
 
 from app.api.routes import ServicesDep
-from app.modbus.types import SLAVE_SPECS, AddressRange, RegisterFormat
+from app.modbus.types import AREAS, SLAVE_SPECS, AddressRange, RegisterFormat
 
 pages_router = APIRouter()
 
@@ -205,6 +206,55 @@ def _stub_body(title: str) -> str:
     return f"<h2>{escape(title)}</h2><p>Раздел в разработке.</p>"
 
 
+def _register_map_json() -> str:
+    """Геометрия карты для JS (TASK-711): slave → fmt + диапазоны областей.
+
+    Диапазоны — тройки `[start, stop, step]` сетки значений (1,3,…,1023 для
+    32-битных форматов), из `SLAVE_SPECS` — единственный источник истины.
+    """
+    data: dict[str, dict[str, object]] = {}
+    for slave_id, spec in SLAVE_SPECS.items():
+        areas: dict[str, list[list[int]]] = {
+            area: [[rng.start, rng.stop, rng.step] for rng in spec.area_ranges(area)]
+            for area in AREAS
+            if spec.area_ranges(area)
+        }
+        data[str(slave_id)] = {"fmt": spec.fmt.value, "areas": areas}
+    return json.dumps(data)
+
+
+def _registers_body() -> str:
+    """Каркас «Карты регистров» (TASK-711): выбор слейва/области, таблица, пагинация.
+
+    Значения наполняет `static/registers.js` (WS `/ws/state` + REST-фолбэк),
+    поэтому body собирается конкатенацией: JSON геометрии содержит фигурные
+    скобки, f-строки тут только мешали бы.
+    """
+    slave_options = "".join(f"<option>{slave_id}</option>" for slave_id in SLAVE_SPECS)
+    return (
+        "<h2>Карта регистров</h2>\n"
+        '<p class="note">Значения живые (WS <code>/ws/state</code>), общие для всех '
+        "подключений: запись любого пользователя сразу видна остальным (shared "
+        "last-write-wins).</p>\n"
+        "<p>\n"
+        f'  <label>Unit ID <select id="reg-slave">{slave_options}</select></label>\n'
+        '  <label>Область <select id="reg-area"></select></label>\n'
+        '  <span class="note" id="reg-fmt"></span>\n'
+        "</p>\n"
+        '<table class="values">\n'
+        "  <thead><tr><th>Адрес</th><th>Значение</th></tr></thead>\n"
+        '  <tbody id="reg-body"></tbody>\n'
+        "</table>\n"
+        "<p>\n"
+        '  <button id="reg-prev" type="button">← Назад</button>\n'
+        '  <span id="reg-page" role="status"></span>\n'
+        '  <button id="reg-next" type="button">Вперёд →</button>\n'
+        "</p>\n"
+        "<script>window.REGISTER_MAP = " + _register_map_json() + ";</script>\n"
+        '<script type="module" src="/static/registers.js"></script>'
+    )
+
+
 #: Панель «Инъекции ошибок» с кнопкой сброса (TASK-605). Обычная строка (без
 #: f-префикса): фигурные скобки JS остаются литеральными.
 _INJECTIONS_PANEL = """
@@ -275,8 +325,8 @@ def get_index(services: ServicesDep) -> HTMLResponse:
 
 @pages_router.get("/registers", response_class=HTMLResponse)
 def get_registers() -> HTMLResponse:
-    """Карта регистров (TASK-711…715) — заглушка до наполнения."""
-    return HTMLResponse(_shell("Карта регистров", "/registers", _stub_body("Карта регистров")))
+    """Карта регистров: live-таблица адресов по слейву (TASK-711…715)."""
+    return HTMLResponse(_shell("Карта регистров", "/registers", _registers_body()))
 
 
 @pages_router.get("/behaviors", response_class=HTMLResponse)
