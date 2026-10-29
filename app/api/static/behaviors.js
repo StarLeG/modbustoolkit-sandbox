@@ -1,7 +1,9 @@
-// Форма настройки поведений (TASK-721): slave/area/address → kind → params.
+// Форма настройки поведений (TASK-721…723): slave/area/address → kind → params.
 // Kind фильтруется по области (числовые — hr/ir, дискретные — cl/di), поля
 // параметров рисуются по выбранному kind (спецификации — PARAM_SPECS, дефолты
-// совпадают с generators.py). Установка — PUT /api/modbus/behaviors/{slave}/{area}/{address},
+// совпадают с generators.py). Установка одной привязки — PUT
+// /api/modbus/behaviors/{slave}/{area}/{address}; диапазон адресов
+// («Применить к диапазону» / «Сбросить») — POST /api/modbus/behaviors/batch;
 // список переопределений — GET /api/modbus/behaviors?only_overrides=true.
 
 const NUMERIC_KINDS = [
@@ -315,6 +317,112 @@ async function apply() {
   }
 }
 
+// Адреса сетки значений области в диапазоне from..to (TASK-723): у 32-битных
+// форматов значения идут с шагом 2 (1, 3, …, 1023) — берём только существующие.
+function rangeAddresses(area, from, to) {
+  const spec = window.REGISTER_MAP[String(el("bh-slave").value)];
+  const ranges = (spec && spec.areas[area]) || [];
+  const addresses = [];
+  for (const [start, stop, step] of ranges) {
+    for (let address = start; address <= stop; address += step) {
+      if (address >= from && address <= to) addresses.push(address);
+    }
+  }
+  return addresses;
+}
+
+function readRange() {
+  const from = Number(el("bh-address").value);
+  const to = Number(el("bh-address-to").value);
+  if (!Number.isInteger(from) || !Number.isInteger(to) || from < 1 || to < 1) {
+    showError("адреса диапазона — целые числа >= 1");
+    return null;
+  }
+  if (to < from) {
+    showError("«Адрес по» меньше «Адрес от»");
+    return null;
+  }
+  const area = el("bh-area").value;
+  const addresses = rangeAddresses(area, from, to);
+  if (addresses.length === 0) {
+    showError("в диапазоне " + from + ".." + to + " нет адресов области " + area);
+    return null;
+  }
+  return { area: area, addresses: addresses };
+}
+
+// «Применить к диапазону» (TASK-723): одна форма → batch на все адреса
+// диапазона (POST /api/modbus/behaviors/batch, атомарно).
+async function applyRange() {
+  const status = el("bh-status");
+  const params = collectParams();
+  if (params === null) return;
+  const range = readRange();
+  if (range === null) return;
+  const slave = Number(el("bh-slave").value);
+  const kind = el("bh-kind").value;
+  const locked = el("bh-locked").checked;
+  const items = range.addresses.map(function (address) {
+    return {
+      slave: slave,
+      area: range.area,
+      address: address,
+      kind: kind,
+      params: params,
+      locked: locked,
+    };
+  });
+  status.textContent = "Применение к " + items.length + " адресам…";
+  try {
+    const response = await fetch("/api/modbus/behaviors/batch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items: items }),
+    });
+    const body = await response.json();
+    if (!response.ok) {
+      status.textContent = "Ошибка " + response.status + ": " + (body.detail || "");
+      return;
+    }
+    status.textContent =
+      "Применено к " + body.applied + " адресам (" + kind + ", slave "
+      + slave + " " + range.area + ").";
+    refreshList();
+  } catch (error) {
+    status.textContent = "Ошибка: " + error;
+  }
+}
+
+// «Сбросить» (TASK-723): диапазон возвращается к поведениям по умолчанию
+// (batch с remove=true — атомарно).
+async function resetRange() {
+  const status = el("bh-status");
+  const range = readRange();
+  if (range === null) return;
+  const slave = Number(el("bh-slave").value);
+  const items = range.addresses.map(function (address) {
+    return { slave: slave, area: range.area, address: address, remove: true };
+  });
+  status.textContent = "Сброс " + items.length + " адресов…";
+  try {
+    const response = await fetch("/api/modbus/behaviors/batch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items: items }),
+    });
+    const body = await response.json();
+    if (!response.ok) {
+      status.textContent = "Ошибка " + response.status + ": " + (body.detail || "");
+      return;
+    }
+    status.textContent =
+      "Сброшено к дефолтам: " + body.removed + " (slave " + slave + " " + range.area + ").";
+    refreshList();
+  } catch (error) {
+    status.textContent = "Ошибка: " + error;
+  }
+}
+
 // Таблица переопределений: только привязки, отличающиеся от дефолтов.
 async function refreshList() {
   const list = el("bh-list");
@@ -358,6 +466,8 @@ function init() {
   el("bh-area").addEventListener("change", renderKinds);
   el("bh-kind").addEventListener("change", renderParams);
   el("bh-apply").addEventListener("click", apply);
+  el("bh-apply-range").addEventListener("click", applyRange);
+  el("bh-reset-range").addEventListener("click", resetRange);
   el("bh-refresh").addEventListener("click", refreshList);
   for (const button of document.querySelectorAll("#bh-presets button[data-preset]")) {
     button.addEventListener("click", function () {

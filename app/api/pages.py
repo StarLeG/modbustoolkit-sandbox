@@ -286,13 +286,15 @@ def _registers_body() -> str:
 
 
 def _behaviors_body() -> str:
-    """Каркас «Поведений» (TASK-721): форма привязки и таблица переопределений.
+    """Каркас «Поведений» (TASK-721…723): форма привязки и таблица переопределений.
 
-    Форма: slave 1..9 (slave 10 поведений не имеет), область, адрес, kind
-    (фильтруется по области: числовые — hr/ir, дискретные — cl/di), параметры
-    по kind и `locked`. Значения параметров наполняет `static/behaviors.js`
-    (PUT `/api/modbus/behaviors/{slave}/{area}/{address}`), список текущих
-    переопределений — GET `/api/modbus/behaviors?only_overrides=true`.
+    Форма: slave 1..9 (slave 10 поведений не имеет), область, адрес/диапазон,
+    kind (фильтруется по области: числовые — hr/ir, дискретные — cl/di),
+    параметры по kind и `locked`. Пресеты (TASK-722) заполняют форму одним
+    нажатием. Наполняет `static/behaviors.js`: одна привязка — PUT
+    `/api/modbus/behaviors/{slave}/{area}/{address}`, диапазон
+    («Применить к диапазону» / «Сбросить») — POST `/api/modbus/behaviors/batch`,
+    список переопределений — GET `/api/modbus/behaviors?only_overrides=true`.
     """
     slave_options = "".join(f"<option>{slave_id}</option>" for slave_id in range(1, 10))
     area_options = "".join(f'<option value="{area}">{area}</option>' for area in AREAS)
@@ -306,7 +308,8 @@ def _behaviors_body() -> str:
         "<p>\n"
         f'  <label>Unit ID <select id="bh-slave">{slave_options}</select></label>\n'
         f'  <label>Область <select id="bh-area">{area_options}</select></label>\n'
-        '  <label>Адрес <input id="bh-address" type="number" min="1" value="1"></label>\n'
+        '  <label>Адрес от <input id="bh-address" type="number" min="1" value="1"></label>\n'
+        '  <label>Адрес по <input id="bh-address-to" type="number" min="1" value="1"></label>\n'
         "</p>\n"
         "<h2>Пресеты</h2>\n"
         '<p class="note">Быстрая настройка формы ниже: заполняет поведение и '
@@ -330,6 +333,8 @@ def _behaviors_body() -> str:
         '<div id="bh-params"></div>\n'
         "<p>\n"
         '  <button id="bh-apply" type="button">Установить</button>\n'
+        '  <button id="bh-apply-range" type="button">Применить к диапазону</button>\n'
+        '  <button id="bh-reset-range" type="button">Сбросить</button>\n'
         '  <span id="bh-status" role="status"></span>\n'
         "</p>\n"
         "<h2>Текущие переопределения</h2>\n"
@@ -343,6 +348,7 @@ def _behaviors_body() -> str:
         "<th>Параметры</th><th>Locked</th></tr></thead>\n"
         '  <tbody id="bh-list"></tbody>\n'
         "</table>\n"
+        "<script>window.REGISTER_MAP = " + _register_map_json() + ";</script>\n"
         '<script type="module" src="/static/behaviors.js"></script>'
     )
 

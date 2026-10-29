@@ -172,3 +172,43 @@ def test_behaviors_js_preset_kinds_valid() -> None:
         'kind: "constant"',
     ):
         assert fragment in js, fragment
+
+
+def test_behaviors_page_has_range_controls() -> None:
+    """Диапазон адресов и кнопки «Применить к диапазону» / «Сбросить» (TASK-723)."""
+    with _client() as client:
+        response = client.get("/behaviors")
+    html = response.text
+    for fragment in (
+        'id="bh-address-to"',
+        'id="bh-apply-range"',
+        'id="bh-reset-range"',
+        "Применить к диапазону",
+        "Сбросить",
+    ):
+        assert fragment in html, fragment
+    assert "window.REGISTER_MAP" in html  # геометрия сетки адресов для диапазона
+
+
+def test_behaviors_js_applies_range_via_batch() -> None:
+    """Диапазон применяется пакетно через POST /api/modbus/behaviors/batch (TASK-723)."""
+    with _client() as client:
+        response = client.get("/static/behaviors.js")
+    js = response.text
+    for fragment in (
+        '"/api/modbus/behaviors/batch"',
+        "applyRange",
+        "resetRange",
+        "rangeAddresses",
+    ):
+        assert fragment in js, fragment
+
+
+def test_behaviors_js_reset_range_removes_overrides() -> None:
+    """«Сбросить» — batch с remove=true (возврат к дефолтам) (TASK-723)."""
+    with _client() as client:
+        response = client.get("/static/behaviors.js")
+    js = response.text
+    assert "remove: true" in js
+    assert "body.removed" in js
+    assert "body.applied" in js
