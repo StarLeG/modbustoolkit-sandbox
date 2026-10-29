@@ -143,3 +143,20 @@ def test_write_rate_limit() -> None:
     assert ok2.status_code == 200
     assert denied.status_code == 429
     assert read.status_code == 200  # чтение лимитом не ограничено
+
+
+def test_write_rate_limit_is_per_ip() -> None:
+    """TASK-503: лимит считается по IP, а не глобально."""
+    services = build_services(replace(Config(), WEB_MAX_WRITE_PER_MIN_PER_IP=1))
+    app = create_app(services=services, run_engine=False)
+    payload = {"slave": 1, "area": "hr", "address": 5, "value": 1}
+    with (
+        TestClient(app, client=("1.2.3.4", 1)) as first,
+        TestClient(app, client=("5.6.7.8", 2)) as second,
+    ):
+        ok = first.post("/api/modbus/write", json=payload)
+        denied = first.post("/api/modbus/write", json=payload)
+        ok_other = second.post("/api/modbus/write", json=payload)
+    assert ok.status_code == 200
+    assert denied.status_code == 429  # лимит исчерпан для 1.2.3.4
+    assert ok_other.status_code == 200  # другой IP работает в своём окне
