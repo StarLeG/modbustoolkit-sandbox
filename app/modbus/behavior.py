@@ -1,0 +1,160 @@
+"""Модель поведения и реестр привязок (slave, area, address) → Behavior.
+
+TASK-201: модель `Behavior` (kind / params / locked) и реестр переопределений.
+Семантика движка — `docs/adr/ADR-003-behavior-engine.md`:
+
+- привязка — value-grid адрес (`SlaveSpec.area_ranges`): для слейвов 2..9
+  нечётные 1, 3, …, 1023;
+- slave 10 поведений не имеет (его IR вычисляется, см. `slave10`);
+- числовые kind'ы работают с hr/ir, дискретные — с cl/di.
+"""
+from __future__ import annotations
+
+from collections.abc import Iterator
+from dataclasses import dataclass, field
+from typing import Any, Literal, get_args
+
+from app.modbus.types import AREAS, SLAVE_SPECS, Area
+
+BehaviorKind = Literal[
+    "constant",
+    "counter",
+    "sawtooth",
+    "triangle",
+    "meander",
+    "sine",
+    "random_uniform",
+    "random_walk",
+    "ramp_oneshot",
+    "countdown",
+    "step",
+    "follow",
+    "toggle",
+    "pwm",
+    "random_bit",
+    "counter_bits",
+    "follow_bit",
+]
+
+#: Все допустимые kind'ы (проверка на runtime — вход из REST позже).
+BEHAVIOR_KINDS: frozenset[str] = frozenset(get_args(BehaviorKind))
+
+#: Числовые поведения — области hr/ir.
+NUMERIC_KINDS: frozenset[str] = frozenset(
+    {
+        "constant",
+        "counter",
+        "sawtooth",
+        "triangle",
+        "meander",
+        "sine",
+        "random_uniform",
+        "random_walk",
+        "ramp_oneshot",
+        "countdown",
+        "step",
+        "follow",
+    }
+)
+
+#: Дискретные поведения — области cl/di.
+DISCRETE_KINDS: frozenset[str] = frozenset(
+    {"constant", "toggle", "pwm", "random_bit", "counter_bits", "follow_bit"}
+)
+
+#: Привязка поведения: (slave, area, value-grid address).
+Binding = tuple[int, Area, int]
+
+
+@dataclass(frozen=True)
+class Behavior:
+    """Конфигурация поведения одного регистра/бита.
+
+    `params` — параметры kind'а (см. `generators.py`); `locked=True` запрещает
+    внешние записи в привязку (0x04 + журнал, ADR-003 п. 3).
+    """
+
+    kind: BehaviorKind
+    params: dict[str, Any] = field(default_factory=dict)
+    locked: bool = False
+
+    def __post_init__(self) -> None:
+        if self.kind not in BEHAVIOR_KINDS:
+            raise ValueError(f"неизвестный kind поведения: {self.kind!r}")
+        if not isinstance(self.params, dict):
+            raise TypeError(f"params должен быть dict, получено: {type(self.params).__name__}")
+        if not isinstance(self.locked, bool):
+            raise TypeError(f"locked должен быть bool, получено: {type(self.locked).__name__}")
+
+
+def check_binding(slave: int, area: Area, address: int) -> None:
+    """Проверить привязку: slave 1..9, область из AREAS, value-grid адрес."""
+    if not isinstance(slave, int) or isinstance(slave, bool):
+        raise TypeError(f"slave должен быть int, получено: {type(slave).__name__}")
+    if slave not in SLAVE_SPECS:
+        raise ValueError(f"неизвестный slave: {slave}")
+    if slave == 10:
+        raise ValueError("slave 10: поведения не поддерживаются (IR вычисляются)")
+    if area not in AREAS:
+        raise ValueError(f"неизвестная область: {area!r}")
+    if not isinstance(address, int) or isinstance(address, bool):
+        raise TypeError(f"address должен быть int, получено: {type(address).__name__}")
+    if not SLAVE_SPECS[slave].has_address(area, address):
+        raise ValueError(f"slave {slave}: {area} адрес {address} вне карты значений")
+
+
+def check_kind_for_area(kind: str, area: Area) -> None:
+    """Проверить применимость kind'а к области (числовые — hr/ir, дискретные — cl/di)."""
+    allowed = NUMERIC_KINDS if area in ("hr", "ir") else DISCRETE_KINDS
+    if kind not in allowed:
+        raise ValueError(f"kind {kind!r} не применим к области {area}")
+
+
+class BehaviorRegistry:
+    """Реестр привязок: хранит только переопределения, снимок — `items()`.
+
+    Значение из `get()`/`items()` — тот же объект `Behavior`, пока привязка
+    не переопределена: движок сравнивает конфигурации по идентичности (ADR-003 п. 5).
+    """
+
+    def __init__(self) -> None:
+        self._behaviors: dict[Binding, Behavior] = {}
+
+    def get(self, slave: int, area: Area, address: int) -> Behavior | None:
+        """Переопределение привязки либо None (нет в реестре)."""
+        return self._behaviors.get((slave, area, address))
+
+    def set(self, slave: int, area: Area, address: int, behavior: Behavior) -> None:
+        """Установить поведение; привязка и kind/область валидируются."""
+        if not isinstance(behavior, Behavior):
+            raise TypeError(f"ожидается Behavior, получено: {type(behavior).__name__}")
+        check_binding(slave, area, address)
+        check_kind_for_area(behavior.kind, area)
+        self._behaviors[(slave, area, address)] = behavior
+
+    def remove(self, slave: int, area: Area, address: int) -> Behavior | None:
+        """Удалить переопределение; вернуть его либо None, если не было."""
+        return self._behaviors.pop((slave, area, address), None)
+
+    def reset(self, slave: int | None = None) -> int:
+        """Удалить переопределения (все или одного слейва); вернуть число удалённых."""
+        if slave is None:
+            count = len(self._behaviors)
+            self._behaviors.clear()
+            return count
+        doomed = [binding for binding in self._behaviors if binding[0] == slave]
+        for binding in doomed:
+            del self._behaviors[binding]
+        return len(doomed)
+
+    def is_locked(self, slave: int, area: Area, address: int) -> bool:
+        """True, если привязка существует и заблокирована для внешних записей."""
+        behavior = self._behaviors.get((slave, area, address))
+        return behavior is not None and behavior.locked
+
+    def items(self) -> Iterator[tuple[Binding, Behavior]]:
+        """Итератор по сохранённым привязкам: ((slave, area, address), Behavior)."""
+        return iter(self._behaviors.items())
+
+    def __len__(self) -> int:
+        return len(self._behaviors)
