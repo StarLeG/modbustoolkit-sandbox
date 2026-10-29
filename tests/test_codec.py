@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+import struct
 
 import pytest
 
@@ -73,6 +74,37 @@ def test_word_order_differs_across_formats() -> None:
     assert wires[RegisterFormat.UINT32_CDAB] == [0x5678, 0x1234]
     assert wires[RegisterFormat.UINT32_BADC] == [0x3412, 0x7856]
     assert wires[RegisterFormat.UINT32_DCBA] == [0x7856, 0x3412]
+
+
+# Таблица HRIR_SPEC.md для float: те же байты 12 34 56 78 трактуются
+# перестановкой слов/байт формата (uint32-колонка таблицы → IEEE-754).
+HRIR_FLOAT_TABLE: list[tuple[RegisterFormat, int]] = [
+    (RegisterFormat.FLOAT_ABCD, 0x12345678),
+    (RegisterFormat.FLOAT_CDAB, 0x56781234),
+    (RegisterFormat.FLOAT_BADC, 0x34127856),
+    (RegisterFormat.FLOAT_DCBA, 0x78563412),
+]
+
+
+def test_decode_float_hrir_reference_table() -> None:
+    """Float decode использует ту же перестановку, что и uint32-колонка таблицы."""
+    for fmt, bits in HRIR_FLOAT_TABLE:
+        expected = struct.unpack(">f", struct.pack(">I", bits))[0]
+        assert decode([0x1234, 0x5678], fmt) == expected
+
+
+def test_float_one_point_zero_wire_registers() -> None:
+    """1.0f = 0x3F800000: известные регистры на проводе для каждого порядка."""
+    assert encode(1.0, RegisterFormat.FLOAT_ABCD) == [0x3F80, 0x0000]
+    assert encode(1.0, RegisterFormat.FLOAT_CDAB) == [0x0000, 0x3F80]
+    assert encode(1.0, RegisterFormat.FLOAT_BADC) == [0x803F, 0x0000]
+    assert encode(1.0, RegisterFormat.FLOAT_DCBA) == [0x0000, 0x803F]
+
+
+def test_float_negative_one_wire_registers() -> None:
+    """−1.0f = 0xBF800000 — знак не теряется ни в одном порядке."""
+    assert encode(-1.0, RegisterFormat.FLOAT_ABCD) == [0xBF80, 0x0000]
+    assert encode(-1.0, RegisterFormat.FLOAT_DCBA) == [0x0000, 0x80BF]
 
 
 def test_encode_rejects_out_of_range() -> None:
