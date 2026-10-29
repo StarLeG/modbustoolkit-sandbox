@@ -15,6 +15,7 @@ from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
 
 from app.api.routes import ServicesDep
+from app.modbus.config import Config
 from app.modbus.slave10 import ZONE_COUNT, zone_offset_hours
 from app.modbus.types import AREAS, SLAVE_SPECS, AddressRange, RegisterFormat
 
@@ -204,8 +205,73 @@ def _index_body(host: str, port: int) -> str:
 """
 
 
-def _stub_body(title: str) -> str:
-    return f"<h2>{escape(title)}</h2><p>Раздел в разработке.</p>"
+def _docs_body(config: Config) -> str:
+    """Страница «Документация» (TASK-751): форматы, ограничения, многопользовательность.
+
+    Спецификация форматов — та же таблица, что на «Обзоре» (`SLAVE_SPECS` —
+    единственный источник истины); лимиты подставляются из `Config`, чтобы
+    страница не расходилась с реальным окружением. Примеры кода добавит
+    TASK-752 на эту же страницу.
+    """
+    return (
+        "<h2>Документация</h2>\n"
+        "<h3>Спецификация форматов</h3>\n"
+        "<p>Каждый unit ID эмулирует свой формат данных для HR/IR. Значение "
+        "32-битного формата занимает два регистра <code>N</code> и <code>N+1</code>, "
+        "адрес значения — адрес старшего регистра (сетка 1, 3, …, 1023). "
+        "Буквы ABCD — байты значения от старшего (A) к младшему (D):</p>\n"
+        "<ul>\n"
+        "  <li><code>ABCD</code> — слова big-endian (старшее первым), байты в словах big-endian;</li>\n"
+        "  <li><code>CDAB</code> — слова little-endian (младшее первым), байты в словах big-endian;</li>\n"
+        "  <li><code>BADC</code> — слова big-endian, байты в словах little-endian (swap bytes);</li>\n"
+        "  <li><code>DCBA</code> — слова little-endian, байты в словах little-endian (swap bytes + swap words).</li>\n"
+        "</ul>\n"
+        + _formats_table()
+        + "\n"
+        '<p class="note">Slave 10 — только IR: 1..268 — метрики 27 часовых '
+        "поясов (8 регистров на зону, «дырки» блоков = 0), 300..301 — Unix "
+        "timestamp (<code>uint32 ABCD</code>, точность ±0.5 с). Полная "
+        "спецификация — <code>docs/HRIR_SPEC.md</code> в репозитории.</p>\n"
+        "\n"
+        "<h3>Ограничения</h3>\n"
+        "<ul>\n"
+        "  <li>Допустимые функции: <code>1, 2, 3, 4, 5, 6, 16</code>; "
+        "любая другая → Illegal Function (0x01).</li>\n"
+        "  <li>FC 5/6 — запись одного CL/HR; FC 16 — запись HR, не более "
+        "2 регистров за запрос (иначе Illegal Data Value, 0x03).</li>\n"
+        "  <li>Slave 10 — только input registers: чтение CL/DI/HR → "
+        "Illegal Data Address (0x02).</li>\n"
+        "  <li>Адресация — как в таблице выше: адрес значения из спецификации "
+        "без пересчёта (адрес на проводе равен ему).</li>\n"
+        f"  <li>Лимиты: соединений с одного IP — {config.MODBUS_MAX_CONN_PER_IP}, "
+        f"Modbus-записей в секунду на соединение — {config.MODBUS_MAX_WRITE_PER_SEC}, "
+        f"записей из UI в минуту на IP — {config.WEB_MAX_WRITE_PER_MIN_PER_IP}.</li>\n"
+        f"  <li>Инъекции ошибок действуют не дольше "
+        f"{config.INJECTION_MAX_TTL_S:g} с (INJECTION_MAX_TTL_S).</li>\n"
+        f"  <li>Журнал хранит последние {config.JOURNAL_SIZE} событий; значения "
+        "регистров и журнал живут только в памяти — перезапуск сервера сбрасывает "
+        "всё.</li>\n"
+        "</ul>\n"
+        "\n"
+        "<h3>Правила многопользовательскости</h3>\n"
+        "<ul>\n"
+        "  <li><strong>HR и CL — общие (shared last-write-wins).</strong> "
+        "Запись любого пользователя сразу видна остальным и в любой момент может "
+        "быть перезаписана кем-то ещё. Это принцип работы сервера, а не ошибка.</li>\n"
+        "  <li><strong>IR и DI генерируются автоматически</strong> движком "
+        "поведений (счётчики, паттерны) и доступны только для чтения.</li>\n"
+        "  <li>Настройки поведений и инъекции ошибок тоже общие для всех "
+        "подключений.</li>\n"
+        "  <li>Аутентификации нет — не передавайте через сервер чувствительные "
+        "данные и не используйте его как стенд с реальным оборудованием.</li>\n"
+        "</ul>\n"
+        "\n"
+        "<h3>API</h3>\n"
+        "<p>REST — Swagger UI: <code>/api/docs</code> (префикс "
+        "<code>/api/modbus/</code>). WebSocket: <code>/ws/state</code> — "
+        "live-состояние слейва, <code>/ws/events</code> — события журнала. "
+        "Примеры кода для популярных Modbus-клиентов — ниже.</p>"
+    )
 
 
 def _tools_body() -> str:
@@ -684,6 +750,6 @@ def get_tools() -> HTMLResponse:
 
 
 @pages_router.get("/docs", response_class=HTMLResponse)
-def get_docs() -> HTMLResponse:
-    """Документация (TASK-751…752) — заглушка до наполнения."""
-    return HTMLResponse(_shell("Документация", "/docs", _stub_body("Документация")))
+def get_docs(services: ServicesDep) -> HTMLResponse:
+    """Документация: форматы, ограничения, многопользовательность (TASK-751)."""
+    return HTMLResponse(_shell("Документация", "/docs", _docs_body(services.config)))

@@ -266,4 +266,7 @@ def test_api_docs_moved_under_api() -> None:
     with _client() as client:
         assert client.get("/api/docs").status_code == 200
         assert client.get("/api/openapi.json").status_code == 200
-        assert "Раздел в разработке" in client.get("/docs").text
+        html = client.get("/docs").text
+        assert "Спецификация форматов" in html  # страница документации UI (TASK-751)
+        assert "<title>Документация" in html  # не страница Swagger UI
+        assert "swagger-ui" not in html
