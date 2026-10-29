@@ -184,6 +184,32 @@ class MeanderGenerator:
         return self._max if frac < self._duty else self._min
 
 
+class SineGenerator:
+    """`sine`: синусоида `(min+max)/2 + (max-min)/2 * sin(2π(now/period_s + phase))`."""
+
+    is_static = False
+
+    def __init__(
+        self,
+        params: dict[str, Any],
+        binding: Binding,
+        ctx: GeneratorContext,
+        rng: random.Random,
+    ) -> None:
+        _ = binding, ctx, rng
+        self._min = _num(params, "min", 0)
+        self._max = _num(params, "max", 100)
+        self._period = _positive(params, "period_s", 10.0)
+        self._phase = _num(params, "phase", 0.0)
+        if self._max < self._min:
+            raise ValueError(f"sine: max {self._max!r} < min {self._min!r}")
+        self._mid = (self._min + self._max) / 2
+        self._amp = (self._max - self._min) / 2
+
+    def update(self, now: float) -> int | float:
+        return self._mid + self._amp * math.sin(2 * math.pi * (now / self._period + self._phase))
+
+
 def create_generator(
     behavior: Behavior,
     binding: Binding,
@@ -208,4 +234,6 @@ def create_generator(
         return TriangleGenerator(params, binding, ctx, rng)
     if behavior.kind == "meander":
         return MeanderGenerator(params, binding, ctx, rng)
+    if behavior.kind == "sine":
+        return SineGenerator(params, binding, ctx, rng)
     raise ValueError(f"поведение {behavior.kind!r} ещё не реализовано")

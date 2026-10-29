@@ -214,3 +214,35 @@ def test_meander_validation() -> None:
         _gen("meander", {"duty": -0.1})
     with pytest.raises(ValueError, match="period_s"):
         _gen("meander", {"period_s": 0})
+
+
+# --- TASK-216: sine --------------------------------------------------------------------
+
+
+def test_sine_wave() -> None:
+    gen = _gen("sine", {"min": -10, "max": 10, "period_s": 4, "phase": 0})
+    assert gen.update(0.0) == pytest.approx(0)  # sin(0) = 0
+    assert gen.update(1.0) == pytest.approx(10)  # sin(π/2) = 1 → max
+    assert gen.update(2.0) == pytest.approx(0)  # sin(π) = 0
+    assert gen.update(3.0) == pytest.approx(-10)  # sin(3π/2) = -1 → min
+    assert gen.update(4.0) == pytest.approx(0)  # цикл
+
+
+def test_sine_offset_and_amplitude() -> None:
+    """min=0, max=100 → ось 50, амплитуда 50."""
+    gen = _gen("sine", {"min": 0, "max": 100, "period_s": 4, "phase": 0})
+    assert gen.update(0.0) == pytest.approx(50)
+    assert gen.update(1.0) == pytest.approx(100)
+    assert gen.update(3.0) == pytest.approx(0)
+
+
+def test_sine_phase() -> None:
+    gen = _gen("sine", {"min": -10, "max": 10, "period_s": 4, "phase": 0.25})
+    assert gen.update(0.0) == pytest.approx(10)
+
+
+def test_sine_validation() -> None:
+    with pytest.raises(ValueError, match="period_s"):
+        _gen("sine", {"period_s": 0})
+    with pytest.raises(ValueError, match="max"):
+        _gen("sine", {"min": 5, "max": 1})
