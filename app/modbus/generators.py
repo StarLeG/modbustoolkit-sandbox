@@ -210,6 +210,35 @@ class SineGenerator:
         return self._mid + self._amp * math.sin(2 * math.pi * (now / self._period + self._phase))
 
 
+class RandomUniformGenerator:
+    """`random_uniform`: равномерное случайное значение в [min, max] на каждом update.
+
+    Если min и max — целые — `rng.randint` (включительно), иначе `rng.uniform`.
+    """
+
+    is_static = False
+
+    def __init__(
+        self,
+        params: dict[str, Any],
+        binding: Binding,
+        ctx: GeneratorContext,
+        rng: random.Random,
+    ) -> None:
+        _ = binding, ctx
+        self._rng = rng
+        self._min = _num(params, "min", 0)
+        self._max = _num(params, "max", 100)
+        if self._max < self._min:
+            raise ValueError(f"random_uniform: max {self._max!r} < min {self._min!r}")
+
+    def update(self, now: float) -> int | float:
+        _ = now
+        if isinstance(self._min, int) and isinstance(self._max, int):
+            return self._rng.randint(self._min, self._max)
+        return self._rng.uniform(self._min, self._max)
+
+
 def create_generator(
     behavior: Behavior,
     binding: Binding,
@@ -236,4 +265,6 @@ def create_generator(
         return MeanderGenerator(params, binding, ctx, rng)
     if behavior.kind == "sine":
         return SineGenerator(params, binding, ctx, rng)
+    if behavior.kind == "random_uniform":
+        return RandomUniformGenerator(params, binding, ctx, rng)
     raise ValueError(f"поведение {behavior.kind!r} ещё не реализовано")

@@ -246,3 +246,35 @@ def test_sine_validation() -> None:
         _gen("sine", {"period_s": 0})
     with pytest.raises(ValueError, match="max"):
         _gen("sine", {"min": 5, "max": 1})
+
+
+# --- TASK-217: random_uniform ----------------------------------------------------------
+
+
+def test_random_uniform_int_params_give_ints() -> None:
+    gen = _gen("random_uniform", {"min": 0, "max": 10}, seed=7)
+    for _ in range(20):
+        value = gen.update(0.0)
+        assert isinstance(value, int)
+        assert 0 <= value <= 10
+
+
+def test_random_uniform_float_params_give_floats() -> None:
+    gen = _gen("random_uniform", {"min": 0.5, "max": 1.5}, seed=7)
+    for _ in range(20):
+        value = gen.update(0.0)
+        assert isinstance(value, float)
+        assert 0.5 <= value <= 1.5
+
+
+def test_random_uniform_deterministic_with_seed() -> None:
+    gen_a = _gen("random_uniform", {"min": 0, "max": 100}, seed=1)
+    gen_b = _gen("random_uniform", {"min": 0, "max": 100}, seed=1)
+    seq_a = [gen_a.update(0.0) for _ in range(5)]
+    seq_b = [gen_b.update(0.0) for _ in range(5)]
+    assert seq_a == seq_b  # одинаковый seed → одинаковая последовательность
+
+
+def test_random_uniform_validation() -> None:
+    with pytest.raises(ValueError, match="max"):
+        _gen("random_uniform", {"min": 5, "max": 1})
