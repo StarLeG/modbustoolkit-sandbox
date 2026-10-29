@@ -11,6 +11,7 @@ from pymodbus.client import AsyncModbusTcpClient
 
 ILLEGAL_FUNCTION = 0x01
 ILLEGAL_ADDRESS = 0x02
+ILLEGAL_VALUE = 0x03
 
 
 async def _assert_exc(
@@ -95,3 +96,25 @@ async def test_slave10_gap_and_end(client: AsyncModbusTcpClient) -> None:
 async def test_bit_address_out_of_map(client: AsyncModbusTcpClient) -> None:
     await _assert_exc(client.read_coils(65, count=1, device_id=5), ILLEGAL_ADDRESS)
     await _assert_exc(client.read_discrete_inputs(0, count=1, device_id=5), ILLEGAL_ADDRESS)
+
+
+# --- TASK-803: FC 16 за пределами 1..2 регистров → 0x03 -------------------------------
+
+
+async def test_fc16_four_registers_rejected(client: AsyncModbusTcpClient) -> None:
+    """FC 16 > 2 регистров → Illegal Data Value (0x03), ничего не записано."""
+    await _assert_exc(client.write_registers(40, [1, 2, 3, 4], device_id=1), ILLEGAL_VALUE)
+    back = await client.read_holding_registers(40, count=4, device_id=1)
+    assert back.registers == [0, 0, 0, 0]
+
+
+async def test_fc16_zero_registers_rejected(client: AsyncModbusTcpClient) -> None:
+    await _assert_exc(client.write_registers(41, [], device_id=1), ILLEGAL_VALUE)
+
+
+async def test_fc16_over_limit_rejected_on_all_slaves(client: AsyncModbusTcpClient) -> None:
+    """Лимит FC 16 (≤ 2 регистров) проверяется до адреса: 0x03 на всех слейвах."""
+    for device_id in range(1, 11):
+        await _assert_exc(
+            client.write_registers(1, [1, 2, 3], device_id=device_id), ILLEGAL_VALUE
+        )
