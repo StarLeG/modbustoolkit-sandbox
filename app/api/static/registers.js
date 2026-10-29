@@ -1,17 +1,29 @@
-// Карта регистров (TASK-711): таблица адресов по слейву, live через WS /ws/state.
+// Карта регистров (TASK-711, 712): таблица адресов по слейву, live через WS.
 // Геометрия карты — window.REGISTER_MAP (серверный рендер из SLAVE_SPECS).
 // Пагинация — по 64 адреса; WS-подписка только на адреса видимой страницы.
-// REST-фолбэк: при недоступном WS значения подтягиваются из GET /api/modbus/state.
+// Форматы значений (TASK-712): DEC / DEC (знаковый) / HEX / FLOAT — по формату
+// регистра слейва; для cl/di — только 0/1. Режимы FLOAT для uint32 и DEC/HEX
+// для float — reinterpret битов значения.
 
 const PAGE_SIZE = 64;
 const RECONNECT_MAX_MS = 15000;
+
+const MODE_LABELS = {
+  dec: "DEC",
+  signed: "DEC (знаковый)",
+  hex: "HEX",
+  float: "FLOAT",
+  bit: "0/1",
+};
 
 const map = window.REGISTER_MAP;
 
 const state = {
   slave: 1,
   area: null,
+  mode: "dec",
   addresses: [],
+  values: new Map(),
   page: 0,
   ws: null,
   reconnectAttempt: 0,
@@ -30,6 +42,59 @@ function areaList() {
   return Object.keys(spec().areas);
 }
 
+function fmtKind() {
+  const fmt = spec().fmt;
+  if (fmt.startsWith("uint16")) return "uint16";
+  if (fmt.startsWith("uint32")) return "uint32";
+  return "float";
+}
+
+function availableModes() {
+  if (state.area === "cl" || state.area === "di") return ["bit"];
+  const kind = fmtKind();
+  if (kind === "uint16") return ["dec", "signed", "hex"];
+  if (kind === "uint32") return ["dec", "signed", "hex", "float"];
+  return ["float", "dec", "signed", "hex"];
+}
+
+function floatToBits(value) {
+  const buffer = new ArrayBuffer(4);
+  new DataView(buffer).setFloat32(0, value);
+  return new DataView(buffer).getUint32(0);
+}
+
+function bitsToFloat(bits) {
+  const buffer = new ArrayBuffer(4);
+  new DataView(buffer).setUint32(0, bits >>> 0);
+  return new DataView(buffer).getFloat32(0);
+}
+
+function toSigned(bits, width) {
+  const limit = width === 16 ? 0x8000 : 0x80000000;
+  const span = width === 16 ? 0x10000 : 0x100000000;
+  return bits >= limit ? bits - span : bits;
+}
+
+function formatValue(value) {
+  if (value === true) return "1";
+  if (value === false) return "0";
+  const kind = fmtKind();
+  const bits = kind === "float" ? floatToBits(value) : value;
+  switch (state.mode) {
+    case "signed":
+      return String(toSigned(bits, kind === "uint16" ? 16 : 32));
+    case "hex":
+      return (
+        "0x" +
+        (bits >>> 0).toString(16).toUpperCase().padStart(kind === "uint16" ? 4 : 8, "0")
+      );
+    case "float":
+      return kind === "float" ? String(value) : String(bitsToFloat(value));
+    default: // "dec" / "bit"
+      return String(value);
+  }
+}
+
 function addressesOf(area) {
   const out = [];
   for (const [start, stop, step] of spec().areas[area]) {
@@ -38,12 +103,6 @@ function addressesOf(area) {
     }
   }
   return out;
-}
-
-function formatValue(value) {
-  if (value === true) return "1";
-  if (value === false) return "0";
-  return String(value);
 }
 
 function pageAddresses() {
@@ -66,6 +125,20 @@ function renderAreas() {
   el("reg-fmt").textContent = "Формат: " + spec().fmt;
 }
 
+function renderFormats() {
+  const select = el("reg-format");
+  const modes = availableModes();
+  select.innerHTML = "";
+  for (const mode of modes) {
+    const option = document.createElement("option");
+    option.value = mode;
+    option.textContent = MODE_LABELS[mode];
+    select.appendChild(option);
+  }
+  state.mode = modes.includes(state.mode) ? state.mode : modes[0];
+  select.value = state.mode;
+}
+
 function renderTable() {
   const body = el("reg-body");
   body.innerHTML = "";
@@ -75,7 +148,9 @@ function renderTable() {
     cellAddress.textContent = String(address);
     const cellValue = document.createElement("td");
     cellValue.id = "reg-cell-" + address;
-    cellValue.textContent = "—";
+    cellValue.textContent = state.values.has(address)
+      ? formatValue(state.values.get(address))
+      : "—";
     row.appendChild(cellAddress);
     row.appendChild(cellValue);
     body.appendChild(row);
@@ -89,6 +164,7 @@ function renderTable() {
 function applyFrame(frame) {
   const values = (frame.areas && frame.areas[state.area]) || {};
   for (const [address, value] of Object.entries(values)) {
+    state.values.set(Number(address), value);
     const cell = el("reg-cell-" + address);
     if (cell) cell.textContent = formatValue(value);
   }
@@ -141,6 +217,8 @@ function connect() {
 function refresh() {
   state.addresses = addressesOf(state.area);
   state.page = 0;
+  state.values.clear();
+  renderFormats();
   renderTable();
   subscribe();
   loadRest();
@@ -155,6 +233,10 @@ function init() {
   el("reg-area").addEventListener("change", function () {
     state.area = this.value;
     refresh();
+  });
+  el("reg-format").addEventListener("change", function () {
+    state.mode = this.value;
+    renderTable();
   });
   el("reg-prev").addEventListener("click", function () {
     if (state.page > 0) {

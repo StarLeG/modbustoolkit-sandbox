@@ -239,6 +239,7 @@ def _registers_body() -> str:
         "<p>\n"
         f'  <label>Unit ID <select id="reg-slave">{slave_options}</select></label>\n'
         '  <label>Область <select id="reg-area"></select></label>\n'
+        '  <label>Формат <select id="reg-format"></select></label>\n'
         '  <span class="note" id="reg-fmt"></span>\n'
         "</p>\n"
         '<table class="values">\n'

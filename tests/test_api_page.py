@@ -76,6 +76,22 @@ def test_registers_js_served() -> None:
     assert "/api/modbus/state" in response.text
 
 
+def test_registers_page_has_format_select() -> None:
+    """Переключатель форматов значений на карте регистров (TASK-712)."""
+    with _client() as client:
+        response = client.get("/registers")
+    assert 'id="reg-format"' in response.text
+
+
+def test_registers_js_formats_values() -> None:
+    """Форматирование HEX / DEC / signed / FLOAT по формату слейва (TASK-712)."""
+    with _client() as client:
+        response = client.get("/static/registers.js")
+    js = response.text
+    for fragment in ("DEC (знаковый)", "floatToBits", "bitsToFloat", "toSigned", '"hex"'):
+        assert fragment in js, fragment
+
+
 def test_injections_page_has_clear_button() -> None:
     """Кнопка «Сбросить инъекции» → REST /inject/clear (TASK-605).
 
