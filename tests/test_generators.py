@@ -157,3 +157,28 @@ def test_sawtooth_validation() -> None:
         _gen("sawtooth", {"period_s": 0})
     with pytest.raises(ValueError, match="max"):
         _gen("sawtooth", {"min": 5, "max": 1})
+
+
+# --- TASK-214: triangle ----------------------------------------------------------------
+
+
+def test_triangle_wave() -> None:
+    gen = _gen("triangle", {"min": 0, "max": 10, "period_s": 4, "phase": 0})
+    assert gen.update(0.0) == 0
+    assert gen.update(1.0) == 5
+    assert gen.update(2.0) == 10
+    assert gen.update(3.0) == 5
+    assert gen.update(4.0) == 0
+
+
+def test_triangle_phase() -> None:
+    gen = _gen("triangle", {"min": 0, "max": 10, "period_s": 4, "phase": 0.25})
+    assert gen.update(0.0) == 5
+    assert gen.update(1.0) == 10
+
+
+def test_triangle_validation() -> None:
+    with pytest.raises(ValueError, match="period_s"):
+        _gen("triangle", {"period_s": -1})
+    with pytest.raises(ValueError, match="max"):
+        _gen("triangle", {"min": 5, "max": 1})
