@@ -122,7 +122,7 @@
 ## Эпик 5 · Многопользовательскость и защита
 
 - [x] [P0] **TASK-501 · Лимит соединений с IP** (`MODBUS_MAX_CONN_PER_IP`)
-- [ ] [P0] **TASK-502 · Rate-limit Modbus-записей** (`MODBUS_MAX_WRITE_PER_SEC`)
+- [x] [P0] **TASK-502 · Rate-limit Modbus-записей** (`MODBUS_MAX_WRITE_PER_SEC`)
 - [ ] [P0] **TASK-503 · Rate-limit UI-записей** (`WEB_MAX_WRITE_PER_MIN_PER_IP`)
 - [ ] [P0] **TASK-504 · Плашка «публичный сервер»** в UI (обязательный текст)
 - [ ] [P1] **TASK-505 · Журнал событий** (ring buffer `JOURNAL_SIZE`)

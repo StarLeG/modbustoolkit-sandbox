@@ -1,7 +1,8 @@
-"""TASK-501: лимит одновременных соединений по IP (ADR-006 п. 2).
+"""TASK-501/502: лимиты публичного порта (ADR-006 п. 2–3).
 
-Юнит — `ConnectionLimiter`; интеграция — третий TCP-клиент с одного IP
-получает немедленный close, слот освобождается при разрыве.
+Юнит — `ConnectionLimiter`/`RateWindow`; интеграция — третий TCP-клиент с
+одного IP получает немедленный close; записи сверх `MODBUS_MAX_WRITE_PER_SEC`
+получают 0x06 (Device Busy), чтения не лимитируются.
 """
 from __future__ import annotations
 
@@ -9,9 +10,10 @@ import asyncio
 from dataclasses import replace
 
 import pytest
+from pymodbus.client import AsyncModbusTcpClient
 
 from app.modbus.config import Config
-from app.modbus.limits import ConnectionLimiter
+from app.modbus.limits import ConnectionLimiter, RateWindow
 from app.modbus.server import serve
 
 # --- ConnectionLimiter (unit) ------------------------------------------------------------
@@ -84,3 +86,46 @@ async def test_conn_limit_closes_excess_connection(config: Config) -> None:
         w3.close()
         for writer in writers[1:]:
             writer.close()
+
+
+# --- RateWindow (unit, TASK-502) ----------------------------------------------------------
+
+
+def test_rate_window_limits_within_window() -> None:
+    now = [0.0]
+    window = RateWindow(2, 1.0, clock=lambda: now[0])
+    assert window.allow() is True
+    assert window.allow() is True
+    assert window.allow() is False  # лимит исчерпан
+    now[0] = 0.5
+    assert window.allow() is False  # окно ещё не прошло
+    now[0] = 1.1
+    assert window.allow() is True  # окно скользит
+
+
+def test_rate_window_rejects_bad_params() -> None:
+    with pytest.raises(ValueError, match="лимит"):
+        RateWindow(0)
+    with pytest.raises(ValueError, match="окно"):
+        RateWindow(1, 0.0)
+
+
+# --- интеграция: rate-limit записей (TASK-502) --------------------------------------------
+
+
+async def test_write_rate_limit_answers_device_busy(config: Config) -> None:
+    cfg = replace(config, MODBUS_MAX_WRITE_PER_SEC=2)
+    async with serve(cfg):
+        client = AsyncModbusTcpClient("127.0.0.1", port=cfg.MODBUS_TCP_PORT)
+        assert await client.connect()
+        results = [await client.write_register(1, value, device_id=1) for value in range(4)]
+        read = await client.read_holding_registers(1, count=1, device_id=1)
+        await asyncio.sleep(1.1)  # окно скользит
+        later = await client.write_register(1, 9, device_id=1)
+        client.close()
+    assert not results[0].isError()  # первые две записи проходят
+    assert not results[1].isError()
+    assert results[2].exception_code == 0x06  # type: ignore[attr-defined]  # Device Busy
+    assert results[3].exception_code == 0x06  # type: ignore[attr-defined]
+    assert not read.isError()  # чтения не лимитируются
+    assert not later.isError()  # после окна запись снова проходит

@@ -29,7 +29,7 @@ from pymodbus.server.requesthandler import ServerRequestHandler
 
 from app.modbus.behavior import WritePolicy
 from app.modbus.config import Config
-from app.modbus.limits import ConnectionLimiter
+from app.modbus.limits import ConnectionLimiter, RateWindow
 from app.modbus.slave_map import (
     EXC_DEVICE_FAILURE,
     EXC_ILLEGAL_ADDRESS,
@@ -161,18 +161,20 @@ def build_context(
 
 
 class GuardedRequestHandler(ServerRequestHandler):
-    """Хендлер соединения: учёт одновременных соединений по IP (TASK-501).
+    """Хендлер соединения: лимиты публичного порта (TASK-501/502, ADR-006).
 
     Слот `ConnectionLimiter` занимается в `callback_connected` (адрес пира —
     `transport.get_extra_info("peername")`) и освобождается в
     `callback_disconnected`. Превышение `MODBUS_MAX_CONN_PER_IP` → немедленный
-    close нового соединения (ADR-006 п. 2).
+    close нового соединения (ADR-006 п. 2). `handle_request` лимитирует записи
+    FC 5/6/16 окном `MODBUS_MAX_WRITE_PER_SEC` (ADR-006 п. 3).
     """
 
     _peer_ip: str | None = None
 
     def __init__(self, owner: Any, trace_packet: Any, trace_pdu: Any, trace_connect: Any) -> None:
         super().__init__(owner, trace_packet, trace_pdu, trace_connect)  # type: ignore[no-untyped-call]
+        self._write_window = RateWindow(owner.max_write_per_sec)
 
     def callback_connected(self) -> None:
         super().callback_connected()
@@ -190,13 +192,41 @@ class GuardedRequestHandler(ServerRequestHandler):
             self.server.conn_limiter.release(self._peer_ip)
             self._peer_ip = None
 
+    async def handle_request(self) -> None:
+        """Обработка запроса с rate-limitом записей FC 5/6/16 (TASK-502).
+
+        Превышение `MODBUS_MAX_WRITE_PER_SEC` → 0x06 (Device Busy), запись не
+        применяется. В журнал такие отказы не пишутся — флуд исчерпал бы ring
+        buffer (ADR-006 п. 3), фиксируются только debug-логом.
+        """
+        pdu = self.last_pdu
+        if (
+            pdu is not None
+            and pdu.function_code in _FC_SET_AREA
+            and not self._write_window.allow()
+        ):
+            log.debug("modbus: превышен лимит записей с %s", self._peer_ip)
+            response = ExceptionResponse(pdu.function_code, ExcCodes.DEVICE_BUSY)
+            response.transaction_id = pdu.transaction_id
+            response.dev_id = pdu.dev_id
+            self.server_send(response, self.last_addr)  # type: ignore[no-untyped-call]
+            return
+        await super().handle_request()  # type: ignore[no-untyped-call]
+
 
 class LimitedTcpServer(ModbusTcpServer):
     """TCP-сервер с лимитами публичного порта (TASK-501/502, ADR-006)."""
 
-    def __init__(self, *args: Any, max_conn_per_ip: int = 20, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        *args: Any,
+        max_conn_per_ip: int = 20,
+        max_write_per_sec: int = 200,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(*args, **kwargs)
         self.conn_limiter = ConnectionLimiter(max_conn_per_ip)
+        self.max_write_per_sec = max_write_per_sec
 
     def callback_new_connection(self) -> GuardedRequestHandler:
         return GuardedRequestHandler(self, self.trace_packet, self.trace_pdu, self.trace_connect)
@@ -210,6 +240,7 @@ def create_server(config: Config, context: SlaveMapContext) -> ModbusTcpServer:
         address=(config.MODBUS_TCP_HOST, config.MODBUS_TCP_PORT),
         trace_pdu=_guard_forbidden_fcs,
         max_conn_per_ip=config.MODBUS_MAX_CONN_PER_IP,
+        max_write_per_sec=config.MODBUS_MAX_WRITE_PER_SEC,
     )
 
 
