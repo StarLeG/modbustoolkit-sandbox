@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 
 import pytest
 
@@ -77,21 +78,49 @@ def test_config_change_reapplies() -> None:
     assert maps[1].get_registers("hr", 5, 1) == [2]
 
 
-def test_removed_binding_is_forgotten() -> None:
+def test_remove_restores_default() -> None:
+    """remove() сбрасывает к дефолту: constant 0 применяется один раз, дальше не трогает."""
     engine, registry, maps = _make_engine()
     registry.set(1, "hr", 5, Behavior("constant", {"value": 1}))
     engine.tick(now=0.0)
-    registry.remove(1, "hr", 5)
-    maps[1].set_registers("hr", 5, [7])
+    assert maps[1].get_registers("hr", 5, 1) == [1]
+    assert registry.remove(1, "hr", 5) is not None
     engine.tick(now=1.0)
-    assert maps[1].get_registers("hr", 5, 1) == [7]
+    assert maps[1].get_registers("hr", 5, 1) == [0]  # дефолт constant 0 применился
+    maps[1].set_registers("hr", 5, [7])  # запись «пользователя» в обход движка
+    engine.tick(now=2.0)
+    assert maps[1].get_registers("hr", 5, 1) == [7]  # дефолт статичен, не перетирает
 
 
-def test_tick_without_behaviors_is_noop() -> None:
+def test_tick_applies_defaults_without_overrides() -> None:
     engine, _registry, maps = _make_engine()
     engine.tick(now=0.0)
-    assert maps[1].get_registers("hr", 1, 1) == [0]
+    assert maps[1].get_registers("hr", 1, 1) == [0]  # дефолт HR: constant 0
     assert engine.ticks == 1
+
+
+def test_default_ir_counter_ticks_once_per_interval() -> None:
+    """Дефолтный IR-счётчик: +1 раз в interval_s (инвариант «IR — счётчик 1 Гц»)."""
+    engine, _registry, maps = _make_engine()
+    engine.tick(now=0.0)
+    assert maps[1].get_registers("ir", 1, 1) == [0]
+    engine.tick(now=1.0)
+    assert maps[1].get_registers("ir", 1, 1) == [1]
+    engine.tick(now=1.5)
+    assert maps[1].get_registers("ir", 1, 1) == [1]  # внутри интервала — без изменений
+    engine.tick(now=2.0)
+    assert maps[1].get_registers("ir", 1, 1) == [2]
+
+
+def test_default_di_counter_bits_pattern() -> None:
+    """Дефолтный DI: бит address−1 счётчика секунд."""
+    engine, _registry, maps = _make_engine()
+    engine.tick(now=0.0)
+    assert maps[1].get_bits("di", 1, 2) == [False, False]
+    engine.tick(now=1.0)  # 0b01
+    assert maps[1].get_bits("di", 1, 2) == [True, False]
+    engine.tick(now=2.0)  # 0b10
+    assert maps[1].get_bits("di", 1, 2) == [False, True]
 
 
 # --- start / stop ---------------------------------------------------------------------
@@ -101,7 +130,10 @@ async def test_start_stop_graceful() -> None:
     engine, registry, _maps = _make_engine(tick_ms=20)
     registry.set(1, "hr", 1, Behavior("constant", {"value": 9}))
     engine.start()
-    await asyncio.sleep(0.07)
+    # первый тик дорогой (создание генераторов ~11 тыс. дефолтных привязок) — ждём условие
+    deadline = time.monotonic() + 5.0
+    while engine.ticks < 2 and time.monotonic() < deadline:
+        await asyncio.sleep(0.01)
     await engine.stop()
     assert engine.ticks >= 2
     frozen = engine.ticks
@@ -122,7 +154,9 @@ async def test_async_context_manager() -> None:
     engine, registry, maps = _make_engine(tick_ms=20)
     registry.set(1, "hr", 3, Behavior("constant", {"value": 5}))
     async with engine:
-        await asyncio.sleep(0.05)
+        deadline = time.monotonic() + 5.0
+        while maps[1].get_registers("hr", 3, 1) != [5] and time.monotonic() < deadline:
+            await asyncio.sleep(0.01)
     assert maps[1].get_registers("hr", 3, 1) == [5]
     assert engine.ticks >= 1
 
@@ -175,9 +209,12 @@ def test_tick_barrier_survives_write_error(monkeypatch: pytest.MonkeyPatch) -> N
     """Исключение в пути записи не роняет тик-цикл (барьер в tick())."""
     engine, registry, maps = _make_engine()
     registry.set(1, "hr", 5, Behavior("constant", {"value": 5}))
+    real_set = maps[1].set_registers
 
-    def broken(*_args: object, **_kwargs: object) -> None:
-        raise RuntimeError("write failed")
+    def broken(area: str, address: int, values: list[int]) -> None:
+        if address == 5:  # падает только целевая привязка, не все ~11 тыс. дефолтов
+            raise RuntimeError("write failed")
+        real_set(area, address, values)
 
     monkeypatch.setattr(maps[1], "set_registers", broken)
     engine.tick(now=0.0)
@@ -189,11 +226,16 @@ def test_generator_creation_failure_falls_back(monkeypatch: pytest.MonkeyPatch) 
     """Ошибка конструктора генератора → constant 0 (инвариант 7)."""
     engine, registry, maps = _make_engine()
     registry.set(1, "hr", 5, Behavior("constant", {"value": 5}, locked=True))
+    from app.modbus import engine as engine_module
 
-    def broken(*_args: object, **_kwargs: object) -> object:
-        raise ValueError("плохие параметры")
+    real_create = engine_module.create_generator
 
-    monkeypatch.setattr("app.modbus.engine.create_generator", broken)
+    def broken(*args: object, **kwargs: object) -> object:
+        if args[1] == (1, "hr", 5):  # только целевая привязка, дефолты создаются штатно
+            raise ValueError("плохие параметры")
+        return real_create(*args, **kwargs)
+
+    monkeypatch.setattr(engine_module, "create_generator", broken)
     engine.tick(now=0.0)
     assert maps[1].get_registers("hr", 5, 1) == [0]
     fallback = registry.get(1, "hr", 5)

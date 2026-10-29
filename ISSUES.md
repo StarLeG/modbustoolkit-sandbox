@@ -59,7 +59,7 @@
 - [x] [P0] **TASK-202 · Тик-цикл 100 мс** (asyncio task), graceful stop
 - [x] [P0] **TASK-203 · `locked: bool`** — запись при locked → 0x04 + журнал
 - [x] [P0] **TASK-204 · try/except вокруг каждого поведения** — ошибка → `constant 0` + лог
-- [ ] [P0] **TASK-205 · Дефолтные поведения**
+- [x] [P0] **TASK-205 · Дефолтные поведения**
   - HR/CL — `constant 0`, `locked=False`
   - IR slaves 1–9 — `counter step=1`, `locked=True`
   - DI slaves 1–9 — `counter_bits` (биты счётчика секунд), `locked=True`

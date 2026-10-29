@@ -1,6 +1,7 @@
 """Модель поведения и реестр привязок (slave, area, address) → Behavior.
 
 TASK-201: модель `Behavior` (kind / params / locked) и реестр переопределений.
+TASK-205: дефолтные поведения slave 1..9 (материализация в реестр).
 Семантика движка — `docs/adr/ADR-003-behavior-engine.md`:
 
 - привязка — value-grid адрес (`SlaveSpec.area_ranges`): для слейвов 2..9
@@ -16,7 +17,7 @@ from typing import Any, Literal, get_args
 
 from app.modbus.journal import Journal, JournalEntry
 from app.modbus.slave_map import EXC_DEVICE_FAILURE, ModbusMapError
-from app.modbus.types import AREAS, SLAVE_SPECS, Area
+from app.modbus.types import AREAS, SLAVE_SPECS, Area, RegisterFormat
 
 BehaviorKind = Literal[
     "constant",
@@ -112,18 +113,87 @@ def check_kind_for_area(kind: str, area: Area) -> None:
         raise ValueError(f"kind {kind!r} не применим к области {area}")
 
 
-class BehaviorRegistry:
-    """Реестр привязок: хранит только переопределения, снимок — `items()`.
+# --- дефолтные поведения (TASK-205, ADR-003 п. 5) --------------------------------------
+#
+# Дефолты материализуются в реестре: один экземпляр Behavior-дефолта
+# разделяется многими привязками, `set()` подменяет объект, движок замечает
+# смену по идентичности. Slave 10 исключён — его IR вычисляются (`slave10`).
 
-    Значение из `get()`/`items()` — тот же объект `Behavior`, пока привязка
-    не переопределена: движок сравнивает конфигурации по идентичности (ADR-003 п. 5).
+#: CL/HR — constant 0; внешние записи разрешены (shared last-write-wins).
+_DEFAULT_CONSTANT: Behavior = Behavior("constant", {"value": 0}, locked=False)
+
+#: DI — авто-паттерн: бит address−1 счётчика секунд.
+_DEFAULT_COUNTER_BITS: Behavior = Behavior("counter_bits", {}, locked=True)
+
+#: IR slave 1 (UINT16): counter step=1 раз в interval_s, locked=True.
+#: max = предел формата: иначе clamp_value «залипает» на 65535.
+_DEFAULT_IR_COUNTER_16: Behavior = Behavior(
+    "counter", {"step": 1, "interval_s": 1, "max": 0xFFFF}, locked=True
+)
+
+#: IR slaves 2..9 (uint32/float): counter step=1 раз в interval_s, locked=True.
+_DEFAULT_IR_COUNTER_32: Behavior = Behavior(
+    "counter", {"step": 1, "interval_s": 1, "max": 0xFFFF_FFFF}, locked=True
+)
+
+
+def _ir_default(fmt: RegisterFormat) -> Behavior:
+    """IR-дефолт по формату: max = предел типа значения."""
+    return _DEFAULT_IR_COUNTER_16 if fmt.registers_per_value == 1 else _DEFAULT_IR_COUNTER_32
+
+
+def _default_for(slave: int, area: Area) -> Behavior:
+    """Дефолт области слейва: ir — счётчик по формату, di — биты счётчика, остальное — 0."""
+    if area == "ir":
+        return _ir_default(SLAVE_SPECS[slave].fmt)
+    if area == "di":
+        return _DEFAULT_COUNTER_BITS
+    return _DEFAULT_CONSTANT
+
+
+def default_behavior(slave: int, area: Area, address: int) -> Behavior:
+    """Дефолтное поведение привязки (ADR-003 п. 5); привязка валидируется."""
+    check_binding(slave, area, address)
+    return _default_for(slave, area)
+
+
+def _materialize_defaults() -> dict[Binding, Behavior]:
+    """Все допустимые привязки слейвов 1..9 → дефолтные поведения (общие экземпляры)."""
+    defaults: dict[Binding, Behavior] = {}
+    for slave, spec in SLAVE_SPECS.items():
+        if slave == 10:
+            continue
+        for area in AREAS:
+            behavior = _default_for(slave, area)
+            for rng in spec.area_ranges(area):
+                for address in range(rng.start, rng.stop + 1, rng.step):
+                    defaults[(slave, area, address)] = behavior
+    return defaults
+
+
+#: Дефолты всех привязок; копия — стартовое состояние каждого BehaviorRegistry.
+_DEFAULT_BINDINGS: dict[Binding, Behavior] = _materialize_defaults()
+
+
+class BehaviorRegistry:
+    """Реестр привязок: дефолты слейвов 1..9 материализованы, `set()` подменяет объект.
+
+    TASK-205 (ADR-003 п. 5): при создании все допустимые привязки слейвов 1..9
+    получают дефолтные поведения; один экземпляр `Behavior`-дефолта разделяется
+    многими привязками. Значение из `get()`/`items()` — тот же объект, пока
+    привязка не переопределена: движок сравнивает конфигурации по идентичности.
+    `remove()`/`reset()` возвращают привязки к дефолтам (реестр не сжимается).
+    Slave 10 в реестре не бывает.
     """
 
     def __init__(self) -> None:
-        self._behaviors: dict[Binding, Behavior] = {}
+        self._behaviors: dict[Binding, Behavior] = dict(_DEFAULT_BINDINGS)
 
     def get(self, slave: int, area: Area, address: int) -> Behavior | None:
-        """Переопределение привязки либо None (нет в реестре)."""
+        """Текущее поведение привязки (дефолт или переопределение).
+
+        None — привязки в реестре нет (slave 10, адрес вне карты значений).
+        """
         return self._behaviors.get((slave, area, address))
 
     def set(self, slave: int, area: Area, address: int, behavior: Behavior) -> None:
@@ -135,30 +205,47 @@ class BehaviorRegistry:
         self._behaviors[(slave, area, address)] = behavior
 
     def remove(self, slave: int, area: Area, address: int) -> Behavior | None:
-        """Удалить переопределение; вернуть его либо None, если не было."""
-        return self._behaviors.pop((slave, area, address), None)
+        """Сбросить переопределение к дефолту; вернуть сброшенное либо None.
+
+        None — привязка не переопределена (или отсутствует в реестре).
+        """
+        binding = (slave, area, address)
+        prev = self._behaviors.get(binding)
+        if prev is None:
+            return None
+        default = _default_for(slave, area)
+        self._behaviors[binding] = default
+        return None if prev is default else prev
 
     def reset(self, slave: int | None = None) -> int:
-        """Удалить переопределения (все или одного слейва); вернуть число удалённых."""
-        if slave is None:
-            count = len(self._behaviors)
-            self._behaviors.clear()
-            return count
-        doomed = [binding for binding in self._behaviors if binding[0] == slave]
+        """Сбросить переопределения к дефолтам (все или одного слейва).
+
+        Возвращает число сброшенных переопределений (дефолтные привязки не считаются).
+        """
+        doomed = [
+            binding
+            for binding, behavior in self._behaviors.items()
+            if (slave is None or binding[0] == slave)
+            and behavior is not _default_for(binding[0], binding[1])
+        ]
         for binding in doomed:
-            del self._behaviors[binding]
+            self._behaviors[binding] = _default_for(binding[0], binding[1])
         return len(doomed)
 
     def is_locked(self, slave: int, area: Area, address: int) -> bool:
-        """True, если привязка существует и заблокирована для внешних записей."""
+        """True, если привязка существует и заблокирована для внешних записей.
+
+        Дефолты IR/DI — locked=True (генерируются автоматически, инвариант 2).
+        """
         behavior = self._behaviors.get((slave, area, address))
         return behavior is not None and behavior.locked
 
     def items(self) -> Iterator[tuple[Binding, Behavior]]:
-        """Итератор по сохранённым привязкам: ((slave, area, address), Behavior)."""
+        """Итератор по привязкам (дефолты и переопределения): ((slave, area, address), Behavior)."""
         return iter(self._behaviors.items())
 
     def __len__(self) -> int:
+        """Число привязок в реестре (все, включая дефолтные)."""
         return len(self._behaviors)
 
 

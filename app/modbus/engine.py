@@ -89,14 +89,15 @@ class BehaviorEngine:
     # --- тик-цикл -----------------------------------------------------------------
 
     def sync(self, now: float) -> None:
-        """(Пере)создать генераторы там, где конфигурация изменилась по идентичности."""
-        alive: dict[Binding, _Slot] = {}
+        """(Пере)создать генераторы там, где конфигурация изменилась по идентичности.
+
+        Реестр не сжимается (TASK-205: `remove()` сбрасывает к дефолту), поэтому
+        слоты только создаются и обновляются, но не удаляются.
+        """
         for binding, behavior in self._registry.items():
             slot = self._slots.get(binding)
             if slot is None or slot.config is not behavior:
-                slot = self._make_slot(binding, behavior, now)
-            alive[binding] = slot
-        self._slots = alive
+                self._slots[binding] = self._make_slot(binding, behavior, now)
 
     def _make_slot(self, binding: Binding, behavior: Behavior, now: float) -> _Slot:
         """Создать генератор; ошибка конструктора/параметров → constant 0 (инвариант 7)."""
