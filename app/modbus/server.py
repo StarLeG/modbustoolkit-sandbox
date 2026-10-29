@@ -25,8 +25,10 @@ from pymodbus.framer import FramerType
 from pymodbus.pdu import ExceptionResponse, ModbusPDU
 from pymodbus.server import ModbusTcpServer
 
+from app.modbus.behavior import WritePolicy
 from app.modbus.config import Config
 from app.modbus.slave_map import (
+    EXC_DEVICE_FAILURE,
     EXC_ILLEGAL_ADDRESS,
     EXC_ILLEGAL_VALUE,
     ModbusMapError,
@@ -52,6 +54,7 @@ _FC_SET_AREA: dict[int, Area] = {5: "cl", 6: "hr", 16: "hr"}
 _EXC_BY_CODE: dict[int, ExcCodes] = {
     EXC_ILLEGAL_ADDRESS: ExcCodes.ILLEGAL_ADDRESS,
     EXC_ILLEGAL_VALUE: ExcCodes.ILLEGAL_VALUE,
+    EXC_DEVICE_FAILURE: ExcCodes.DEVICE_FAILURE,
 }
 
 
@@ -87,8 +90,11 @@ class SlaveMapContext(ModbusServerContext):
     печатает deprecation-предупреждение; вместо симулятора — собственные карты.
     """
 
-    def __init__(self, maps: dict[int, SlaveMap]) -> None:
+    def __init__(
+        self, maps: dict[int, SlaveMap], write_policy: WritePolicy | None = None
+    ) -> None:
         self._maps = maps
+        self._write_policy = write_policy
         self._devices = {}
         self.simdevices = []
         self.old_simulator = True
@@ -130,6 +136,8 @@ class SlaveMapContext(ModbusServerContext):
         try:
             if func_code == 16 and len(values) > FC16_MAX_REGISTERS:
                 return ExcCodes.ILLEGAL_VALUE
+            if self._write_policy is not None:
+                self._write_policy(device_id, area, address, values)
             if area in ("cl", "di"):
                 smap.set_bits(area, address, [bool(v) for v in values])
             else:
@@ -139,11 +147,14 @@ class SlaveMapContext(ModbusServerContext):
         return None
 
 
-def build_context(maps: dict[int, SlaveMap] | None = None) -> SlaveMapContext:
+def build_context(
+    maps: dict[int, SlaveMap] | None = None,
+    write_policy: WritePolicy | None = None,
+) -> SlaveMapContext:
     """Контекст сервера: по умолчанию `SlaveMap` для всех 10 unit ID."""
     if maps is None:
         maps = {slave_id: SlaveMap(slave_id) for slave_id in SLAVE_SPECS}
-    return SlaveMapContext(maps)
+    return SlaveMapContext(maps, write_policy)
 
 
 def create_server(config: Config, context: SlaveMapContext) -> ModbusTcpServer:

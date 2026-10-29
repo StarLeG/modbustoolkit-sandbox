@@ -10,10 +10,12 @@ TASK-201: модель `Behavior` (kind / params / locked) и реестр пе�
 """
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal, get_args
 
+from app.modbus.journal import Journal, JournalEntry
+from app.modbus.slave_map import EXC_DEVICE_FAILURE, ModbusMapError
 from app.modbus.types import AREAS, SLAVE_SPECS, Area
 
 BehaviorKind = Literal[
@@ -158,3 +160,59 @@ class BehaviorRegistry:
 
     def __len__(self) -> int:
         return len(self._behaviors)
+
+
+#: Политика внешней записи: (slave, area, start, values) -> None | raise ModbusMapError.
+WritePolicy = Callable[[int, Area, int, Sequence[int] | Sequence[bool]], None]
+
+
+def touched_bindings(device_id: int, area: Area, address: int, count: int) -> list[Binding]:
+    """Привязки (value-grid), которые задевает окно сырых регистров/бит записи.
+
+    Для 32-битных форматов (слейвы 2..9) запись в регистр N+1 задевает
+    значение по адресу N — окно переводится в value-grid до проверки locked.
+    """
+    spec = SLAVE_SPECS.get(device_id)
+    if spec is None:
+        return []
+    if area in ("cl", "di") or spec.fmt.registers_per_value == 1:
+        return [(device_id, area, a) for a in range(address, address + count)]
+    first = address if address % 2 == 1 else address - 1
+    last_raw = address + count - 1
+    last = last_raw if last_raw % 2 == 1 else last_raw - 1
+    return [(device_id, area, a) for a in range(first, last + 1, 2)]
+
+
+def make_write_policy(registry: BehaviorRegistry, journal: Journal | None = None) -> WritePolicy:
+    """Политика внешних записей: locked-привязка → 0x04 + запись в журнал.
+
+    Окно, задевающее хотя бы одну locked-привязку, отклоняется целиком
+    (атомарность записи). Движок поведений пишет в карту напрямую, минуя
+    политику (ADR-003 п. 3).
+    """
+
+    def policy(
+        device_id: int,
+        area: Area,
+        address: int,
+        values: Sequence[int] | Sequence[bool],
+    ) -> None:
+        for binding in touched_bindings(device_id, area, address, len(values)):
+            if registry.is_locked(*binding):
+                if journal is not None:
+                    journal.add(
+                        JournalEntry(
+                            action="write_rejected_locked",
+                            slave=device_id,
+                            area=area,
+                            address=address,
+                            value=list(values),
+                            source="modbus",
+                        )
+                    )
+                raise ModbusMapError(
+                    f"slave {device_id}: {area} {address} — запись заблокирована поведением",
+                    EXC_DEVICE_FAILURE,
+                )
+
+    return policy

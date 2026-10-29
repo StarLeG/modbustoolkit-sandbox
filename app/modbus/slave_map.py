@@ -24,6 +24,8 @@ from app.modbus.types import SLAVE_SPECS, Area, SlaveSpec
 EXC_ILLEGAL_ADDRESS = 0x02
 #: Illegal Data Value (0x03) — некорректная длина окна / значение.
 EXC_ILLEGAL_VALUE = 0x03
+#: Server Device Failure (0x04) — например, запись в locked-поведение (ADR-003).
+EXC_DEVICE_FAILURE = 0x04
 
 _REG_AREAS: tuple[Area, ...] = ("hr", "ir")
 _BIT_AREAS: tuple[Area, ...] = ("cl", "di")
