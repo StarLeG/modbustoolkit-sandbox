@@ -11,6 +11,8 @@ from app.api.models import (
     BehaviorIn,
     BehaviorOut,
     BehaviorsResponse,
+    JournalEntryOut,
+    JournalResponse,
     ResetIn,
     ResetResponse,
     RestoreResponse,
@@ -449,3 +451,33 @@ def post_restore(
         )
         restored += 1
     return RestoreResponse(restored=restored, skipped_locked=skipped_locked, ignored=ignored)
+
+
+@router.get("/journal", response_model=JournalResponse)
+def get_journal(
+    services: ServicesDep,
+    limit: Annotated[int | None, Query(ge=1)] = None,
+) -> JournalResponse:
+    """Записи журнала событий (TASK-308).
+
+    От старых к новым; `limit` — максимум последних записей. Источник —
+    кольцевой буфер `JOURNAL_SIZE` (TASK-505): при переполнении старые записи
+    вытесняются, хранение только в памяти (инвариант 9).
+    """
+    entries = services.journal.entries(limit)
+    return JournalResponse(
+        items=[
+            JournalEntryOut(
+                action=entry.action,
+                slave=entry.slave,
+                area=entry.area,
+                address=entry.address,
+                value=entry.value,
+                source=entry.source,
+                ip=entry.ip,
+                timestamp=entry.timestamp,
+            )
+            for entry in entries
+        ],
+        total=len(services.journal),
+    )

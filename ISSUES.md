@@ -104,7 +104,7 @@
 - [x] [P0] **TASK-305 · `GET /api/modbus/state?slave=N`** — снимок значений области
 - [x] [P0] **TASK-306 · `POST /api/modbus/write`** — запись CL/HR из UI (с rate-limit)
 - [x] [P1] **TASK-307 · `POST /api/modbus/snapshot` / `restore`** — JSON state
-- [ ] [P1] **TASK-308 · `GET /api/modbus/journal?limit=…`** — ring buffer
+- [x] [P1] **TASK-308 · `GET /api/modbus/journal?limit=…`** — ring buffer
 - [ ] [P1] **TASK-309 · `POST /api/modbus/inject` / `POST …/inject/clear`**
 - [ ] [P0] **TASK-310 · `GET /healthz`**
 

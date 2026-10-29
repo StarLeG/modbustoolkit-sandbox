@@ -131,6 +131,29 @@ class Snapshot(BaseModel):
     slaves: dict[int, dict[Area, dict[str, int | float | bool]]]
 
 
+class JournalEntryOut(BaseModel):
+    """Запись журнала (TASK-308, TASK-505)."""
+
+    action: str
+    slave: int
+    area: Area
+    address: int
+    value: Any = None
+    source: str
+    ip: str | None = None
+    timestamp: float
+
+
+class JournalResponse(BaseModel):
+    """Записи журнала от старых к новым (TASK-308).
+
+    `total` — записей в буфере сейчас (с учётом вытеснения по `JOURNAL_SIZE`).
+    """
+
+    items: list[JournalEntryOut]
+    total: int
+
+
 class RestoreResponse(BaseModel):
     """Итог восстановления (TASK-307).
 
