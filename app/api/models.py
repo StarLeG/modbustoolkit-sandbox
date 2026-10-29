@@ -42,3 +42,32 @@ class BehaviorsResponse(BaseModel):
     items: list[BehaviorOut]
     total: int
     overrides: int
+
+
+class BatchItem(BaseModel):
+    """Элемент пакетной операции (TASK-303).
+
+    `remove=True` — сброс привязки к дефолту (kind в этом случае запрещён),
+    иначе — установка поведения (kind обязателен).
+    """
+
+    slave: int
+    area: Area
+    address: int
+    kind: str | None = None
+    params: dict[str, Any] = {}
+    locked: bool = False
+    remove: bool = False
+
+
+class BatchIn(BaseModel):
+    """Пакет установки/сброса поведений; применяется атомарно (TASK-303)."""
+
+    items: list[BatchItem]
+
+
+class BatchResponse(BaseModel):
+    """Итог пакета: `applied` — установлено, `removed` — сброшено к дефолтам."""
+
+    applied: int
+    removed: int

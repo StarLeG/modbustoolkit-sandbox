@@ -169,3 +169,82 @@ def test_put_behavior_schema_errors() -> None:
         assert (
             client.put("/api/modbus/behaviors/1/zz/5", json={"kind": "counter"}).status_code == 422
         )
+
+
+# --- TASK-303: POST /api/modbus/behaviors/batch -------------------------------------------
+
+
+def test_batch_set_and_remove() -> None:
+    services = build_services(Config())
+    services.registry.set(1, "hr", 5, Behavior("counter", {"step": 9}))
+    with _client(services) as client:
+        response = client.post(
+            "/api/modbus/behaviors/batch",
+            json={
+                "items": [
+                    {"slave": 1, "area": "hr", "address": 5, "remove": True},
+                    {"slave": 2, "area": "ir", "address": 3, "kind": "counter", "params": {"step": 2}},
+                    {"slave": 1, "area": "cl", "address": 7, "kind": "toggle", "params": {"period_s": 1}},
+                ]
+            },
+        )
+    assert response.status_code == 200
+    assert response.json() == {"applied": 2, "removed": 1}
+    assert services.registry.get(1, "hr", 5).kind == "constant"  # сброшено к дефолту
+    assert services.registry.get(2, "ir", 3).kind == "counter"
+    assert services.registry.get(1, "cl", 7).kind == "toggle"
+
+
+def test_batch_is_atomic() -> None:
+    """Ошибка в элементе 1 → 400, элемент 0 не применяется."""
+    services = build_services(Config())
+    with _client(services) as client:
+        response = client.post(
+            "/api/modbus/behaviors/batch",
+            json={
+                "items": [
+                    {"slave": 1, "area": "hr", "address": 5, "kind": "counter"},
+                    {"slave": 2, "area": "hr", "address": 2, "kind": "counter"},  # чётный адрес
+                ]
+            },
+        )
+    assert response.status_code == 400
+    assert "элемент 1" in response.json()["detail"]
+    assert services.registry.get(1, "hr", 5) is not None
+    assert services.registry.get(1, "hr", 5).kind == "constant"  # ничего не применилось
+
+
+def test_batch_item_validation() -> None:
+    with _client() as client:
+        remove_with_kind = client.post(
+            "/api/modbus/behaviors/batch",
+            json={"items": [{"slave": 1, "area": "hr", "address": 5, "remove": True, "kind": "counter"}]},
+        )
+        assert remove_with_kind.status_code == 400
+        assert "не сочетается" in remove_with_kind.json()["detail"]
+        no_kind = client.post(
+            "/api/modbus/behaviors/batch",
+            json={"items": [{"slave": 1, "area": "hr", "address": 5}]},
+        )
+        assert no_kind.status_code == 400
+        assert "kind обязателен" in no_kind.json()["detail"]
+
+
+def test_batch_journal_per_item() -> None:
+    services = build_services(Config())
+    services.registry.set(1, "hr", 5, Behavior("counter"))
+    with _client(services) as client:
+        client.post(
+            "/api/modbus/behaviors/batch",
+            json={
+                "items": [
+                    {"slave": 1, "area": "hr", "address": 5, "remove": True},
+                    {"slave": 1, "area": "hr", "address": 6, "kind": "constant", "params": {"value": 1}},
+                ]
+            },
+        )
+    entries = services.journal.entries()
+    assert [entry.action for entry in entries] == ["behavior_reset", "behavior_set"]
+    assert all(entry.source == "web" for entry in entries)
+    assert entries[0].address == 5
+    assert entries[1].value == {"kind": "constant", "params": {"value": 1}, "locked": False}

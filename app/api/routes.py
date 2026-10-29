@@ -5,9 +5,21 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 
-from app.api.models import BehaviorIn, BehaviorOut, BehaviorsResponse
+from app.api.models import (
+    BatchIn,
+    BatchResponse,
+    BehaviorIn,
+    BehaviorOut,
+    BehaviorsResponse,
+)
 from app.api.services import AppServices
-from app.modbus.behavior import Behavior, Binding, default_behavior
+from app.modbus.behavior import (
+    Behavior,
+    Binding,
+    check_binding,
+    check_kind_for_area,
+    default_behavior,
+)
 from app.modbus.journal import JournalEntry
 from app.modbus.types import Area
 
@@ -102,3 +114,66 @@ def put_behavior(
         )
     )
     return _behavior_out(stored, (slave, area, address))
+
+
+@router.post("/behaviors/batch", response_model=BatchResponse)
+def post_behaviors_batch(
+    request: Request,
+    body: BatchIn,
+    services: ServicesDep,
+) -> BatchResponse:
+    """Пакетная установка/сброс поведений (TASK-303).
+
+    Атомарность: сперва валидируются все элементы (привязка, kind, область),
+    затем применяются все. Ошибка в любом элементе → 400, ничего не применяется.
+    `remove=True` сбрасывает привязку к дефолту (ADR-003 п. 5). В журнал пишется
+    по одной записи на элемент: `behavior_set` / `behavior_reset` (`source="web"`).
+    """
+    prepared: list[tuple[Binding, Behavior | None]] = []
+    for index, item in enumerate(body.items):
+        binding: Binding = (item.slave, item.area, item.address)
+        try:
+            if item.remove:
+                if item.kind is not None:
+                    raise ValueError("remove=true не сочетается с kind")
+                check_binding(item.slave, item.area, item.address)
+                prepared.append((binding, None))
+            else:
+                if item.kind is None:
+                    raise ValueError("kind обязателен (либо remove=true)")
+                behavior = Behavior(item.kind, item.params, locked=item.locked)  # type: ignore[arg-type]
+                check_binding(item.slave, item.area, item.address)
+                check_kind_for_area(behavior.kind, item.area)
+                prepared.append((binding, behavior))
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(status_code=400, detail=f"элемент {index}: {exc}") from exc
+
+    ip = _client_ip(request)
+    applied = 0
+    removed = 0
+    for binding, new_behavior in prepared:
+        slave, area, address = binding
+        if new_behavior is None:
+            services.registry.remove(slave, area, address)
+            action: str = "behavior_reset"
+            value: object = None
+            removed += 1
+        else:
+            services.registry.set(slave, area, address, new_behavior)
+            stored = services.registry.get(slave, area, address)
+            assert stored is not None  # только что установлена
+            action = "behavior_set"
+            value = {"kind": stored.kind, "params": stored.params, "locked": stored.locked}
+            applied += 1
+        services.journal.add(
+            JournalEntry(
+                action=action,
+                slave=slave,
+                area=area,
+                address=address,
+                value=value,
+                source="web",
+                ip=ip,
+            )
+        )
+    return BatchResponse(applied=applied, removed=removed)
