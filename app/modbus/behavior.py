@@ -2,6 +2,7 @@
 
 TASK-201: модель `Behavior` (kind / params / locked) и реестр переопределений.
 TASK-205: дефолтные поведения slave 1..9 (материализация в реестр).
+TASK-241: нормализация value-параметров по формату регистра (`normalize_params`).
 Семантика движка — `docs/adr/ADR-003-behavior-engine.md`:
 
 - привязка — value-grid адрес (`SlaveSpec.area_ranges`): для слейвов 2..9
@@ -15,6 +16,7 @@ from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal, get_args
 
+from app.modbus.codec import clamp_value
 from app.modbus.journal import Journal, JournalEntry
 from app.modbus.slave_map import EXC_DEVICE_FAILURE, ModbusMapError
 from app.modbus.types import AREAS, SLAVE_SPECS, Area, RegisterFormat
@@ -113,6 +115,63 @@ def check_kind_for_area(kind: str, area: Area) -> None:
         raise ValueError(f"kind {kind!r} не применим к области {area}")
 
 
+# --- нормализация параметров (TASK-241) -------------------------------------------------
+#
+# Value-параметры приводятся к формату регистра слейва: uint16 — clamp 0..65535,
+# uint32 — clamp 0..2^32-1 (дробная часть отбрасывается), float — любой, кроме
+# NaN/Inf (заменяются на 0). Прочие параметры (step, period_s, duty, …) — не
+# значения регистров и не трогаются.
+
+#: Параметры kind'а, являющиеся значениями регистров (приводятся к формату).
+_VALUE_PARAMS: dict[str, tuple[str, ...]] = {
+    "constant": ("value",),
+    "counter": ("start", "min", "max"),
+    "sawtooth": ("min", "max"),
+    "triangle": ("min", "max"),
+    "meander": ("min", "max"),
+    "sine": ("min", "max"),
+    "random_uniform": ("min", "max"),
+    "random_walk": ("min", "max"),
+    "ramp_oneshot": ("from", "to", "then"),
+    "countdown": ("start", "min"),
+    "step": ("values",),
+}
+
+
+def _normalize_param(raw: Any, fmt: RegisterFormat) -> Any:
+    """Привести параметр-значение (или список значений) к формату регистра."""
+    if isinstance(raw, bool) or not isinstance(raw, (int, float, list, tuple)):
+        return raw  # строки ("hold"), bool и прочее — не значения регистров
+    if isinstance(raw, (int, float)):
+        return clamp_value(raw, fmt)
+    return type(raw)([_normalize_param(item, fmt) for item in raw])
+
+
+def normalize_params(behavior: Behavior, fmt: RegisterFormat) -> Behavior:
+    """Привести value-параметры поведения к формату регистра (TASK-241).
+
+    Параметры, отсутствующие в `params`, не трогаются (их значения по умолчанию
+    задаёт генератор). Если нормализация ничего не меняет, возвращается исходный
+    объект `Behavior` — движок сравнивает конфигурации по идентичности
+    (ADR-003 п. 5).
+    """
+    value_params = _VALUE_PARAMS.get(behavior.kind)
+    if not value_params:
+        return behavior
+    normalized: dict[str, Any] = {}
+    changed = False
+    for name, raw in behavior.params.items():
+        if name in value_params:
+            new = _normalize_param(raw, fmt)
+            if new != raw:
+                changed = True
+                raw = new
+        normalized[name] = raw
+    if not changed:
+        return behavior
+    return Behavior(behavior.kind, normalized, locked=behavior.locked)
+
+
 # --- дефолтные поведения (TASK-205, ADR-003 п. 5) --------------------------------------
 #
 # Дефолты материализуются в реестре: один экземпляр Behavior-дефолта
@@ -197,11 +256,17 @@ class BehaviorRegistry:
         return self._behaviors.get((slave, area, address))
 
     def set(self, slave: int, area: Area, address: int, behavior: Behavior) -> None:
-        """Установить поведение; привязка и kind/область валидируются."""
+        """Установить поведение; привязка и kind/область валидируются.
+
+        Value-параметры приводятся к формату регистра слейва (TASK-241);
+        для cl/di (биты) нормализация не нужна.
+        """
         if not isinstance(behavior, Behavior):
             raise TypeError(f"ожидается Behavior, получено: {type(behavior).__name__}")
         check_binding(slave, area, address)
         check_kind_for_area(behavior.kind, area)
+        if area in ("hr", "ir"):
+            behavior = normalize_params(behavior, SLAVE_SPECS[slave].fmt)
         self._behaviors[(slave, area, address)] = behavior
 
     def remove(self, slave: int, area: Area, address: int) -> Behavior | None:

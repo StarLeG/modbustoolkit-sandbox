@@ -1,8 +1,11 @@
 """TASK-201: модель Behavior и реестр привязок (slave, area, address).
 
 TASK-205: дефолтные поведения слейвов 1..9 материализованы в реестре.
+TASK-241: нормализация value-параметров по формату регистра.
 """
 from __future__ import annotations
+
+import math
 
 import pytest
 
@@ -246,3 +249,94 @@ def test_remove_and_reset_touch_only_overrides() -> None:
     registry.set(4, "di", 2, Behavior("constant", {"value": 1}))
     assert registry.reset(4) == 1
     assert registry.get(4, "di", 2) is default_behavior(4, "di", 2)
+
+
+# --- нормализация параметров (TASK-241) -------------------------------------------------
+
+
+def _params(registry: BehaviorRegistry, slave: int, area: str, address: int) -> dict:
+    behavior = registry.get(slave, area, address)  # type: ignore[arg-type]
+    assert behavior is not None
+    return behavior.params
+
+
+def test_normalize_clamps_uint16_params() -> None:
+    registry = BehaviorRegistry()  # slave 1: UINT16
+    registry.set(1, "hr", 5, Behavior("constant", {"value": 70000}))
+    assert _params(registry, 1, "hr", 5) == {"value": 65535}
+    registry.set(1, "hr", 6, Behavior("constant", {"value": -5}))
+    assert _params(registry, 1, "hr", 6) == {"value": 0}
+    registry.set(1, "ir", 1, Behavior("sawtooth", {"min": -10, "max": 70000}))
+    assert _params(registry, 1, "ir", 1) == {"min": 0, "max": 65535}
+
+
+def test_normalize_clamps_uint32_params() -> None:
+    registry = BehaviorRegistry()  # slave 2: UINT32_ABCD
+    registry.set(2, "hr", 1, Behavior("constant", {"value": 2**32}))
+    assert _params(registry, 2, "hr", 1) == {"value": 0xFFFF_FFFF}
+    registry.set(2, "ir", 1, Behavior("countdown", {"start": -1, "min": -7}))
+    assert _params(registry, 2, "ir", 1) == {"start": 0, "min": 0}
+
+
+def test_normalize_float_nan_inf_to_zero() -> None:
+    registry = BehaviorRegistry()  # slave 6: FLOAT_ABCD
+    registry.set(6, "hr", 1, Behavior("constant", {"value": math.nan}))
+    assert _params(registry, 6, "hr", 1) == {"value": 0.0}
+    registry.set(6, "hr", 3, Behavior("constant", {"value": math.inf}))
+    assert _params(registry, 6, "hr", 3) == {"value": 0.0}
+    registry.set(6, "hr", 5, Behavior("constant", {"value": 3.5}))  # обычное float — как есть
+    assert _params(registry, 6, "hr", 5) == {"value": 3.5}
+
+
+def test_normalize_truncates_fractional_for_int_formats() -> None:
+    registry = BehaviorRegistry()  # uint16: дробная часть отбрасывается (как в clamp_value)
+    registry.set(1, "hr", 5, Behavior("constant", {"value": 3.7}))
+    assert _params(registry, 1, "hr", 5) == {"value": 3}
+
+
+def test_normalize_step_values_list() -> None:
+    registry = BehaviorRegistry()
+    registry.set(1, "hr", 5, Behavior("step", {"values": [0, 70000, -1]}))
+    assert _params(registry, 1, "hr", 5) == {"values": [0, 65535, 0]}
+
+
+def test_normalize_ramp_oneshot_from_to_then() -> None:
+    registry = BehaviorRegistry()
+    registry.set(1, "hr", 5, Behavior("ramp_oneshot", {"from": -1, "to": 100000, "then": "hold"}))
+    assert _params(registry, 1, "hr", 5) == {"from": 0, "to": 65535, "then": "hold"}
+    registry.set(1, "hr", 6, Behavior("ramp_oneshot", {"then": 70000}))
+    assert _params(registry, 1, "hr", 6) == {"then": 65535}
+
+
+def test_normalize_keeps_identity_when_unchanged() -> None:
+    """Нормализованный объект не создаётся зря: движок сравнивает по идентичности."""
+    registry = BehaviorRegistry()
+    behavior = Behavior("counter", {"step": 1})  # step — не значение регистра
+    registry.set(1, "hr", 5, behavior)
+    assert registry.get(1, "hr", 5) is behavior
+    empty = Behavior("constant")
+    registry.set(1, "hr", 6, empty)
+    assert registry.get(1, "hr", 6) is empty
+
+
+def test_normalize_keeps_non_value_params() -> None:
+    registry = BehaviorRegistry()
+    behavior = Behavior("counter", {"start": 5, "step": 2.5, "interval_s": 2})
+    registry.set(1, "ir", 1, behavior)  # start в диапазоне, step/interval_s не трогаются
+    assert registry.get(1, "ir", 1) is behavior
+
+
+def test_normalize_skips_discrete_areas() -> None:
+    registry = BehaviorRegistry()
+    behavior = Behavior("constant", {"value": 5})  # битовая область: формата регистра нет
+    registry.set(1, "cl", 1, behavior)
+    assert registry.get(1, "cl", 1) is behavior
+
+
+def test_normalize_preserves_locked() -> None:
+    registry = BehaviorRegistry()
+    registry.set(1, "hr", 5, Behavior("constant", {"value": 70000}, locked=True))
+    behavior = registry.get(1, "hr", 5)
+    assert behavior is not None
+    assert behavior.params == {"value": 65535}
+    assert behavior.locked is True
