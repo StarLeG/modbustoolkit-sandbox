@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.api.rate_limit import WriteRateLimiter
+from app.api.state_bus import WebStateBus
 from app.modbus.behavior import BehaviorRegistry, WritePolicy, make_write_policy
 from app.modbus.config import Config
 from app.modbus.engine import BehaviorEngine
@@ -30,6 +31,7 @@ class AppServices:
     write_policy: WritePolicy
     write_limiter: WriteRateLimiter
     injections: InjectionRegistry
+    ws_bus: WebStateBus
 
 
 def build_services(config: Config | None = None) -> AppServices:
@@ -45,6 +47,7 @@ def build_services(config: Config | None = None) -> AppServices:
     write_policy = make_write_policy(registry, journal)
     write_limiter = WriteRateLimiter(cfg.WEB_MAX_WRITE_PER_MIN_PER_IP)
     injections = InjectionRegistry(max_ttl_s=cfg.INJECTION_MAX_TTL_S)
+    ws_bus = WebStateBus(maps, state_hz=cfg.WS_STATE_HZ)
     return AppServices(
         config=cfg,
         registry=registry,
@@ -54,4 +57,5 @@ def build_services(config: Config | None = None) -> AppServices:
         write_policy=write_policy,
         write_limiter=write_limiter,
         injections=injections,
+        ws_bus=ws_bus,
     )

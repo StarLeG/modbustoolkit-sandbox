@@ -27,6 +27,7 @@ from app.api.models import (
     WriteResponse,
 )
 from app.api.services import AppServices
+from app.api.state_view import area_values
 from app.modbus.behavior import (
     Behavior,
     Binding,
@@ -34,12 +35,11 @@ from app.modbus.behavior import (
     check_kind_for_area,
     default_behavior,
 )
-from app.modbus.codec import clamp_value, decode, encode
+from app.modbus.codec import clamp_value, encode
 from app.modbus.injection import Injection
 from app.modbus.journal import JournalEntry
-from app.modbus.slave10 import TIMESTAMP_ADDR
-from app.modbus.slave_map import ModbusMapError, SlaveMap
-from app.modbus.types import AREAS, SLAVE_SPECS, Area, RegisterFormat
+from app.modbus.slave_map import ModbusMapError
+from app.modbus.types import AREAS, SLAVE_SPECS, Area
 
 router = APIRouter(prefix="/api/modbus")
 
@@ -68,38 +68,6 @@ def _behavior_out(behavior: Behavior, binding: Binding) -> BehaviorOut:
         locked=behavior.locked,
         is_default=behavior is default_behavior(slave, area, address),
     )
-
-
-def _slave10_ir_values(smap: SlaveMap) -> dict[str, int | float | bool]:
-    """IR slave 10: 1..268 — uint16-метрики, 300 — Unix timestamp (UINT32_ABCD)."""
-    values: dict[str, int | float | bool] = {}
-    for address in range(1, 269):
-        values[str(address)] = smap.get_registers("ir", address, 1)[0]
-    values[str(TIMESTAMP_ADDR)] = decode(
-        smap.get_registers("ir", TIMESTAMP_ADDR, 2), RegisterFormat.UINT32_ABCD
-    )
-    return values
-
-
-def _area_values(smap: SlaveMap, area: Area) -> dict[str, int | float | bool]:
-    """Значения области по сетке адресов (TASK-305).
-
-    hr/ir декодируются по формату слейва (для 32-битных — значения 1,3,…,1023),
-    cl/di — bool. Неинициализированные регистры читаются как 0 (sparse-хранилище).
-    """
-    if smap.spec.slave_id == 10 and area == "ir":
-        return _slave10_ir_values(smap)
-    fmt = smap.spec.fmt
-    values: dict[str, int | float | bool] = {}
-    bit_area = area in ("cl", "di")
-    for rng in smap.spec.area_ranges(area):
-        for address in range(rng.start, rng.stop + 1, rng.step):
-            if bit_area:
-                values[str(address)] = smap.get_bits(area, address, 1)[0]
-            else:
-                raw = smap.get_registers(area, address, fmt.registers_per_value)
-                values[str(address)] = decode(raw, fmt)
-    return values
 
 
 def _injection_out(injection: Injection) -> InjectionOut:
@@ -306,7 +274,7 @@ def get_state(
     return StateResponse(
         slave=slave,
         fmt=smap.spec.fmt,
-        areas={a: _area_values(smap, a) for a in areas_to_read},
+        areas={a: area_values(smap, a) for a in areas_to_read},
     )
 
 
@@ -384,7 +352,7 @@ def post_snapshot(services: ServicesDep) -> Snapshot:
     """
     slaves: dict[int, dict[Area, dict[str, int | float | bool]]] = {}
     for slave_id, smap in services.maps.items():
-        slaves[slave_id] = {a: _area_values(smap, a) for a in AREAS if smap.spec.area_ranges(a)}
+        slaves[slave_id] = {a: area_values(smap, a) for a in AREAS if smap.spec.area_ranges(a)}
     return Snapshot(slaves=slaves)
 
 
