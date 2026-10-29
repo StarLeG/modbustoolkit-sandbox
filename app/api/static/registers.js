@@ -237,8 +237,23 @@ function renderTable() {
         startEdit(address);
       });
     }
+    const cellStar = document.createElement("td");
+    const star = document.createElement("button");
+    star.type = "button";
+    star.textContent = "★";
+    star.title = "В избранное";
+    star.addEventListener("click", function () {
+      // событие ловит watchlist.js (TASK-714)
+      document.dispatchEvent(
+        new CustomEvent("watch-add", {
+          detail: { slave: state.slave, area: state.area, address: address },
+        })
+      );
+    });
+    cellStar.appendChild(star);
     row.appendChild(cellAddress);
     row.appendChild(cellValue);
+    row.appendChild(cellStar);
     body.appendChild(row);
   }
   const pages = Math.max(1, Math.ceil(state.addresses.length / PAGE_SIZE));

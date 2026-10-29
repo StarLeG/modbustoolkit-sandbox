@@ -153,7 +153,7 @@
 - [x] [P0] **TASK-711 · Таблица адресов по слейву** (live, WS)
 - [x] [P0] **TASK-712 · Форматирование** HEX / DEC / FLOAT / signed / unsigned — по формату слейва
 - [x] [P0] **TASK-713 · Inline-редактор CL/HR** с плашкой про перезапись
-- [ ] [P1] **TASK-714 · Watch list** (localStorage, WS-подписка)
+- [x] [P1] **TASK-714 · Watch list** (localStorage, WS-подписка)
 - [ ] [P1] **TASK-715 · Live-график** 60–300 с для выбранных регистров
 
 ### 7.3 Поведения

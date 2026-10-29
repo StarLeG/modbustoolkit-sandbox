@@ -247,7 +247,7 @@ def _registers_body() -> str:
         '  <span class="note" id="reg-fmt"></span>\n'
         "</p>\n"
         '<table class="values">\n'
-        "  <thead><tr><th>Адрес</th><th>Значение</th></tr></thead>\n"
+        "  <thead><tr><th>Адрес</th><th>Значение</th><th></th></tr></thead>\n"
         '  <tbody id="reg-body"></tbody>\n'
         "</table>\n"
         '<p id="reg-status" role="status"></p>\n'
@@ -256,8 +256,22 @@ def _registers_body() -> str:
         '  <span id="reg-page" role="status"></span>\n'
         '  <button id="reg-next" type="button">Вперёд →</button>\n'
         "</p>\n"
+        "<h2>Избранное</h2>\n"
+        '<p class="note">Watch list регистров под наблюдением хранится в вашем браузере '
+        "(localStorage) и сохраняется между визитами. Добавить — кнопкой ★ в таблице "
+        "выше; значения обновляются по WS-подписке.</p>\n"
+        '<table class="values">\n'
+        "  <thead><tr><th>Unit ID</th><th>Область</th><th>Адрес</th><th>Значение</th>"
+        "<th></th></tr></thead>\n"
+        '  <tbody id="watch-body"></tbody>\n'
+        "</table>\n"
+        "<p>\n"
+        '  <button id="watch-clear" type="button">Очистить список</button>\n'
+        '  <span id="watch-status" role="status"></span>\n'
+        "</p>\n"
         "<script>window.REGISTER_MAP = " + _register_map_json() + ";</script>\n"
-        '<script type="module" src="/static/registers.js"></script>'
+        '<script type="module" src="/static/registers.js"></script>\n'
+        '<script type="module" src="/static/watchlist.js"></script>'
     )
 
 

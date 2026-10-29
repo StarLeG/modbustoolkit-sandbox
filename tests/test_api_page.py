@@ -111,6 +111,37 @@ def test_registers_js_inline_edit() -> None:
         assert fragment in js, fragment
 
 
+def test_registers_page_has_watchlist() -> None:
+    """Watch list на карте регистров: секция и модуль (TASK-714)."""
+    with _client() as client:
+        response = client.get("/registers")
+    html = response.text
+    for fragment in (
+        "Избранное",
+        'id="watch-body"',
+        'id="watch-clear"',
+        'src="/static/watchlist.js"',
+    ):
+        assert fragment in html, fragment
+
+
+def test_watchlist_js_served() -> None:
+    """Watch list: localStorage и WS-подписка (TASK-714)."""
+    with _client() as client:
+        response = client.get("/static/watchlist.js")
+    assert response.status_code == 200
+    js = response.text
+    for fragment in ("modbus-watchlist", "localStorage", "/ws/state", "watch-add"):
+        assert fragment in js, fragment
+
+
+def test_registers_js_emits_watch_add() -> None:
+    """Кнопка ★ на карте кидает событие watch-add (TASK-714)."""
+    with _client() as client:
+        response = client.get("/static/registers.js")
+    assert "watch-add" in response.text
+
+
 def test_injections_page_has_clear_button() -> None:
     """Кнопка «Сбросить инъекции» → REST /inject/clear (TASK-605).
 
