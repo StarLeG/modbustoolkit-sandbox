@@ -69,7 +69,7 @@
 - [ ] [P0] **TASK-212 · counter** (`start, step, min, max, wrap`)
 - [ ] [P0] **TASK-213 · sawtooth** (`min, max, period_s, phase`)
 - [ ] [P0] **TASK-214 · triangle** (`min, max, period_s, phase`)
-- [ ] [P0] **TASK-215 · meander** (`min, max, period_s, duty, phase`)
+- [x] [P0] **TASK-215 · meander** (`min, max, period_s, duty, phase`)
 - [ ] [P1] **TASK-216 · sine** (`min, max, period_s, phase`)
 - [ ] [P1] **TASK-217 · random_uniform** (`min, max`)
 - [ ] [P1] **TASK-218 · random_walk** (`min, max, step, mean_reversion`)

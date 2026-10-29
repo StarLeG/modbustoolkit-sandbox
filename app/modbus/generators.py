@@ -156,6 +156,34 @@ class TriangleGenerator:
         return self._max - span * ((frac - 0.5) * 2)
 
 
+class MeanderGenerator:
+    """`meander`: max в первые `duty` доли периода, иначе min (меандр/прямоугольник)."""
+
+    is_static = False
+
+    def __init__(
+        self,
+        params: dict[str, Any],
+        binding: Binding,
+        ctx: GeneratorContext,
+        rng: random.Random,
+    ) -> None:
+        _ = binding, ctx, rng
+        self._min = _num(params, "min", 0)
+        self._max = _num(params, "max", 100)
+        self._period = _positive(params, "period_s", 10.0)
+        self._duty = _num(params, "duty", 0.5)
+        self._phase = _num(params, "phase", 0.0)
+        if self._max < self._min:
+            raise ValueError(f"meander: max {self._max!r} < min {self._min!r}")
+        if not 0 <= self._duty <= 1:
+            raise ValueError(f"meander: duty должен быть в 0..1, получено: {self._duty!r}")
+
+    def update(self, now: float) -> int | float:
+        frac = (now / self._period + self._phase) % 1.0
+        return self._max if frac < self._duty else self._min
+
+
 def create_generator(
     behavior: Behavior,
     binding: Binding,
@@ -178,4 +206,6 @@ def create_generator(
         return SawtoothGenerator(params, binding, ctx, rng)
     if behavior.kind == "triangle":
         return TriangleGenerator(params, binding, ctx, rng)
+    if behavior.kind == "meander":
+        return MeanderGenerator(params, binding, ctx, rng)
     raise ValueError(f"поведение {behavior.kind!r} ещё не реализовано")

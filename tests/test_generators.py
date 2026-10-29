@@ -182,3 +182,35 @@ def test_triangle_validation() -> None:
         _gen("triangle", {"period_s": -1})
     with pytest.raises(ValueError, match="max"):
         _gen("triangle", {"min": 5, "max": 1})
+
+
+# --- TASK-215: meander -----------------------------------------------------------------
+
+
+def test_meander_duty_half() -> None:
+    gen = _gen("meander", {"min": 0, "max": 10, "period_s": 4, "duty": 0.5})
+    assert gen.update(0.0) == 10
+    assert gen.update(1.9) == 10
+    assert gen.update(2.0) == 0
+    assert gen.update(3.9) == 0
+    assert gen.update(4.0) == 10
+
+
+def test_meander_duty_quarter() -> None:
+    gen = _gen("meander", {"min": 0, "max": 10, "period_s": 4, "duty": 0.25, "phase": 0})
+    assert gen.update(0.9) == 10
+    assert gen.update(1.1) == 0
+
+
+def test_meander_duty_extremes() -> None:
+    assert _gen("meander", {"min": 0, "max": 10, "duty": 0}).update(0.5) == 0
+    assert _gen("meander", {"min": 0, "max": 10, "duty": 1}).update(0.5) == 10
+
+
+def test_meander_validation() -> None:
+    with pytest.raises(ValueError, match="duty"):
+        _gen("meander", {"duty": 1.5})
+    with pytest.raises(ValueError, match="duty"):
+        _gen("meander", {"duty": -0.1})
+    with pytest.raises(ValueError, match="period_s"):
+        _gen("meander", {"period_s": 0})
