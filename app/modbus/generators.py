@@ -439,6 +439,25 @@ class FollowGenerator:
         return self._ctx.read_value(self._source)
 
 
+class ToggleGenerator:
+    """`toggle`: меандр 50% — True первые `period_s / 2`, затем False (полный период = `period_s`)."""
+
+    is_static = False
+
+    def __init__(
+        self,
+        params: dict[str, Any],
+        binding: Binding,
+        ctx: GeneratorContext,
+        rng: random.Random,
+    ) -> None:
+        _ = binding, ctx, rng
+        self._period = _positive(params, "period_s", 1.0)
+
+    def update(self, now: float) -> bool:
+        return (now / self._period) % 1.0 < 0.5
+
+
 def create_generator(
     behavior: Behavior,
     binding: Binding,
@@ -477,4 +496,6 @@ def create_generator(
         return StepGenerator(params, binding, ctx, rng)
     if behavior.kind == "follow":
         return FollowGenerator(params, binding, ctx, rng)
+    if behavior.kind == "toggle":
+        return ToggleGenerator(params, binding, ctx, rng)
     raise ValueError(f"поведение {behavior.kind!r} ещё не реализовано")

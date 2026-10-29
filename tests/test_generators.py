@@ -461,3 +461,20 @@ def test_follow_validation() -> None:
         _gen("follow", {"source": "hr:0"})  # адрес вне карты
     with pytest.raises(ValueError, match="адрес"):
         _gen("follow", {"source": "hr:2"}, slave=2)  # слейв 2: только нечётные value-grid
+
+
+# --- TASK-232: toggle (bool) ------------------------------------------------------------
+
+
+def test_toggle_flips_every_half_period() -> None:
+    gen = _gen("toggle", {"period_s": 2}, area="cl")
+    assert gen.update(0.0) is True
+    assert gen.update(0.99) is True
+    assert gen.update(1.0) is False
+    assert gen.update(1.99) is False
+    assert gen.update(2.0) is True  # новый период
+
+
+def test_toggle_validation() -> None:
+    with pytest.raises(ValueError, match="period_s"):
+        _gen("toggle", {"period_s": 0}, area="di")
