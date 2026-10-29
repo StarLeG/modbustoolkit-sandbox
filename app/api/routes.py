@@ -13,6 +13,8 @@ from app.api.models import (
     BehaviorsResponse,
     ResetIn,
     ResetResponse,
+    RestoreResponse,
+    Snapshot,
     StateResponse,
     WriteIn,
     WriteResponse,
@@ -346,3 +348,104 @@ def post_write(
         )
     )
     return WriteResponse(slave=body.slave, area=body.area, address=body.address, value=written)
+
+
+@router.post("/snapshot", response_model=Snapshot)
+def post_snapshot(services: ServicesDep) -> Snapshot:
+    """Снять снимок состояния всех слейвов (TASK-307).
+
+    Все области, значения по сетке адресов, декодированные по формату слейва
+    (slave 10 — только ir, см. `docs/HRIR_SPEC.md`). Снимок — JSON в ответе,
+    сервер ничего не хранит (инвариант 9).
+    """
+    slaves: dict[int, dict[Area, dict[str, int | float | bool]]] = {}
+    for slave_id, smap in services.maps.items():
+        slaves[slave_id] = {a: _area_values(smap, a) for a in AREAS if smap.spec.area_ranges(a)}
+    return Snapshot(slaves=slaves)
+
+
+@router.post("/restore", response_model=RestoreResponse)
+def post_restore(
+    request: Request,
+    body: Snapshot,
+    services: ServicesDep,
+) -> RestoreResponse:
+    """Восстановить значения из снимка (TASK-307).
+
+    Пишутся только hr/cl: ir/di генерируются движком (инвариант 2), их
+    значения в снимке игнорируются (`ignored`). Атомарно по валидации: любая
+    ошибка формата/адреса → 400, ничего не пишется. Locked-привязки
+    пропускаются (write_policy, ADR-003 п. 3) — `skipped_locked`. В журнал
+    пишется `restore` по каждой записанной привязке.
+    """
+    if body.version != 1:
+        raise HTTPException(
+            status_code=400,
+            detail=f"неподдерживаемая версия снимка: {body.version}",
+        )
+    prepared: list[tuple[int, Area, int, bool | int | float]] = []
+    ignored = 0
+    for slave, areas in body.slaves.items():
+        if slave not in SLAVE_SPECS:
+            raise HTTPException(status_code=400, detail=f"неизвестный slave: {slave}")
+        spec = SLAVE_SPECS[slave]
+        for area, values in areas.items():
+            if area not in ("cl", "hr"):
+                ignored += len(values)  # ir/di генерируются движком
+                continue
+            for raw_address, value in values.items():
+                try:
+                    address = int(raw_address)
+                except ValueError as exc:
+                    raise HTTPException(
+                        status_code=400, detail=f"slave {slave}: некорректный адрес {raw_address!r}"
+                    ) from exc
+                if not spec.has_address(area, address):
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"slave {slave}: {area} адрес {address} вне карты значений",
+                    )
+                if area == "cl" and not isinstance(value, bool):
+                    raise HTTPException(
+                        status_code=400, detail=f"slave {slave}: cl {address} — ожидается bool"
+                    )
+                if area == "hr" and isinstance(value, bool):
+                    raise HTTPException(
+                        status_code=400, detail=f"slave {slave}: hr {address} — ожидается число"
+                    )
+                prepared.append((slave, area, address, value))
+
+    ip = _client_ip(request)
+    restored = 0
+    skipped_locked = 0
+    for slave, area, address, value in prepared:
+        spec = SLAVE_SPECS[slave]
+        if area == "cl":
+            written: bool | int | float = bool(value)
+            values_out: list[int] | list[bool] = [bool(value)]
+        else:
+            written = clamp_value(value, spec.fmt)
+            values_out = encode(written, spec.fmt)
+        try:
+            services.write_policy(slave, area, address, values_out, source="web", ip=ip)
+        except ModbusMapError:
+            skipped_locked += 1  # политика уже журналировала write_rejected_locked
+            continue
+        smap = services.maps[slave]
+        if area == "cl":
+            smap.set_bits("cl", address, [bool(v) for v in values_out])
+        else:
+            smap.set_registers("hr", address, [int(v) for v in values_out])
+        services.journal.add(
+            JournalEntry(
+                action="restore",
+                slave=slave,
+                area=area,
+                address=address,
+                value=written,
+                source="web",
+                ip=ip,
+            )
+        )
+        restored += 1
+    return RestoreResponse(restored=restored, skipped_locked=skipped_locked, ignored=ignored)

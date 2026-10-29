@@ -118,3 +118,27 @@ class WriteResponse(BaseModel):
     area: Area
     address: int
     value: bool | int | float
+
+
+class Snapshot(BaseModel):
+    """Снимок состояния слейвов (TASK-307, ADR-004 п. 3).
+
+    Значения по сетке адресов (1,3,…,1023 для 32-битных форматов),
+    декодированные по формату слейва. `version` — формат снимка (сейчас 1).
+    """
+
+    version: int = 1
+    slaves: dict[int, dict[Area, dict[str, int | float | bool]]]
+
+
+class RestoreResponse(BaseModel):
+    """Итог восстановления (TASK-307).
+
+    `restored` — записано значений hr/cl; `skipped_locked` — пропущено из-за
+    locked-поведений (ADR-003 п. 3); `ignored` — значения ir/di из снимка
+    (генерируются движком, не восстанавливаются).
+    """
+
+    restored: int
+    skipped_locked: int
+    ignored: int
