@@ -14,6 +14,8 @@ from app.api.models import (
     ResetIn,
     ResetResponse,
     StateResponse,
+    WriteIn,
+    WriteResponse,
 )
 from app.api.services import AppServices
 from app.modbus.behavior import (
@@ -23,11 +25,11 @@ from app.modbus.behavior import (
     check_kind_for_area,
     default_behavior,
 )
-from app.modbus.codec import decode
+from app.modbus.codec import clamp_value, decode, encode
 from app.modbus.journal import JournalEntry
 from app.modbus.slave10 import TIMESTAMP_ADDR
-from app.modbus.slave_map import SlaveMap
-from app.modbus.types import AREAS, Area, RegisterFormat
+from app.modbus.slave_map import ModbusMapError, SlaveMap
+from app.modbus.types import AREAS, SLAVE_SPECS, Area, RegisterFormat
 
 router = APIRouter(prefix="/api/modbus")
 
@@ -280,3 +282,67 @@ def get_state(
         fmt=smap.spec.fmt,
         areas={a: _area_values(smap, a) for a in areas_to_read},
     )
+
+
+@router.post("/write", response_model=WriteResponse)
+def post_write(
+    request: Request,
+    body: WriteIn,
+    services: ServicesDep,
+) -> WriteResponse:
+    """Запись значения CL/HR из UI (TASK-306).
+
+    Только cl (bool) и hr (число): ir/di генерируются движком (инвариант 2).
+    Rate-limit — `WEB_MAX_WRITE_PER_MIN_PER_IP` на IP (429, ADR-004 п. 4);
+    запись в locked-привязку → 409 (write_policy, ADR-003 п. 3). Значение
+    приводится к формату регистра (clamp), в ответе — итог. Журнал: `write`
+    (`source="web"`), отклонённые записи фиксирует политика.
+    """
+    ip = _client_ip(request) or ""
+    if not services.write_limiter.allow(ip):
+        raise HTTPException(
+            status_code=429,
+            detail="слишком много записей из UI, повторите позже",
+        )
+    if body.area not in ("cl", "hr"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"запись из UI поддерживается только для cl/hr: {body.area}",
+        )
+    spec = SLAVE_SPECS[body.slave]
+    if not spec.has_address(body.area, body.address):
+        raise HTTPException(
+            status_code=400,
+            detail=f"slave {body.slave}: {body.area} адрес {body.address} вне карты значений",
+        )
+    if body.area == "cl":
+        if not isinstance(body.value, bool):
+            raise HTTPException(status_code=400, detail="для cl ожидается bool")
+        written: bool | int | float = body.value
+        values: list[int] | list[bool] = [body.value]
+    else:
+        if isinstance(body.value, bool):
+            raise HTTPException(status_code=400, detail="для hr ожидается число")
+        written = clamp_value(body.value, spec.fmt)
+        values = encode(written, spec.fmt)
+    try:
+        services.write_policy(body.slave, body.area, body.address, values, source="web", ip=ip)
+    except ModbusMapError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    smap = services.maps[body.slave]
+    if body.area == "cl":
+        smap.set_bits("cl", body.address, [bool(v) for v in values])
+    else:
+        smap.set_registers("hr", body.address, [int(v) for v in values])
+    services.journal.add(
+        JournalEntry(
+            action="write",
+            slave=body.slave,
+            area=body.area,
+            address=body.address,
+            value=written,
+            source="web",
+            ip=ip,
+        )
+    )
+    return WriteResponse(slave=body.slave, area=body.area, address=body.address, value=written)

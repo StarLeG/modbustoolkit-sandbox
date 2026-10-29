@@ -96,3 +96,25 @@ class StateResponse(BaseModel):
     slave: int
     fmt: RegisterFormat
     areas: dict[Area, dict[str, int | float | bool]]
+
+
+class WriteIn(BaseModel):
+    """Запись значения CL/HR из UI (TASK-306).
+
+    `address` — адрес сетки значений (1,3,…,1023 для 32-битных форматов);
+    для cl значение — bool, для hr — число (приводится к формату регистра).
+    """
+
+    slave: int
+    area: Area
+    address: int
+    value: bool | int | float
+
+
+class WriteResponse(BaseModel):
+    """Подтверждение записи: значение после приведения к формату (TASK-306)."""
+
+    slave: int
+    area: Area
+    address: int
+    value: bool | int | float

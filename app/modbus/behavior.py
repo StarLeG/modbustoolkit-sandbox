@@ -12,9 +12,9 @@ TASK-241: нормализация value-параметров по формат�
 """
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Literal, get_args
+from typing import Any, Literal, Protocol, get_args
 
 from app.modbus.codec import clamp_value
 from app.modbus.journal import Journal, JournalEntry
@@ -314,8 +314,22 @@ class BehaviorRegistry:
         return len(self._behaviors)
 
 
-#: Политика внешней записи: (slave, area, start, values) -> None | raise ModbusMapError.
-WritePolicy = Callable[[int, Area, int, Sequence[int] | Sequence[bool]], None]
+class WritePolicy(Protocol):
+    """Политика внешней записи: проверка окна, при отказе — `ModbusMapError`.
+
+    `source`/`ip` — атрибуция для журнала (по умолчанию — путь Modbus).
+    """
+
+    def __call__(
+        self,
+        device_id: int,
+        area: Area,
+        address: int,
+        values: Sequence[int] | Sequence[bool],
+        *,
+        source: str = "modbus",
+        ip: str | None = None,
+    ) -> None: ...
 
 
 def touched_bindings(device_id: int, area: Area, address: int, count: int) -> list[Binding]:
@@ -348,6 +362,9 @@ def make_write_policy(registry: BehaviorRegistry, journal: Journal | None = None
         area: Area,
         address: int,
         values: Sequence[int] | Sequence[bool],
+        *,
+        source: str = "modbus",
+        ip: str | None = None,
     ) -> None:
         for binding in touched_bindings(device_id, area, address, len(values)):
             if registry.is_locked(*binding):
@@ -359,7 +376,8 @@ def make_write_policy(registry: BehaviorRegistry, journal: Journal | None = None
                             area=area,
                             address=address,
                             value=list(values),
-                            source="modbus",
+                            source=source,
+                            ip=ip,
                         )
                     )
                 raise ModbusMapError(
