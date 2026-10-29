@@ -248,3 +248,57 @@ def test_batch_journal_per_item() -> None:
     assert all(entry.source == "web" for entry in entries)
     assert entries[0].address == 5
     assert entries[1].value == {"kind": "constant", "params": {"value": 1}, "locked": False}
+
+
+# --- TASK-304: POST /api/modbus/behaviors/reset -------------------------------------------
+
+
+def test_reset_all() -> None:
+    services = build_services(Config())
+    services.registry.set(1, "hr", 5, Behavior("counter"))
+    services.registry.set(1, "cl", 2, Behavior("toggle", {"period_s": 1}))
+    services.registry.set(4, "ir", 7, Behavior("counter"))
+    with _client(services) as client:
+        response = client.post("/api/modbus/behaviors/reset", json={})
+        again = client.post("/api/modbus/behaviors/reset", json={})
+    assert response.status_code == 200
+    assert response.json() == {"reset": 3}  # только переопределения
+    assert again.json() == {"reset": 0}  # сбрасывать больше нечего
+    assert services.registry.get(1, "hr", 5).kind == "constant"
+    assert services.registry.get(1, "cl", 2).kind == "constant"  # дефолт CL: constant 0
+    assert services.registry.get(4, "ir", 7).kind == "counter"
+
+
+def test_reset_per_slave() -> None:
+    services = build_services(Config())
+    services.registry.set(1, "hr", 5, Behavior("counter"))
+    services.registry.set(2, "ir", 3, Behavior("sawtooth"))
+    with _client(services) as client:
+        response = client.post("/api/modbus/behaviors/reset", json={"slave": 1})
+    assert response.json() == {"reset": 1}
+    assert services.registry.get(1, "hr", 5).kind == "constant"  # сброшено
+    assert services.registry.get(2, "ir", 3).kind == "sawtooth"  # чужой слейв цел
+
+
+def test_reset_rejects_slave_10() -> None:
+    with _client() as client:
+        response = client.post("/api/modbus/behaviors/reset", json={"slave": 10})
+    assert response.status_code == 400
+    assert "slave 10" in response.json()["detail"]
+
+
+def test_reset_bad_slave_rejected() -> None:
+    with _client() as client:
+        assert client.post("/api/modbus/behaviors/reset", json={"slave": 0}).status_code == 422
+        assert client.post("/api/modbus/behaviors/reset", json={"slave": 11}).status_code == 422
+
+
+def test_reset_journal_per_binding() -> None:
+    services = build_services(Config())
+    services.registry.set(1, "hr", 5, Behavior("counter"))
+    services.registry.set(1, "hr", 6, Behavior("counter"))
+    with _client(services) as client:
+        client.post("/api/modbus/behaviors/reset", json={"slave": 1})
+    entries = services.journal.entries()
+    assert [entry.action for entry in entries] == ["behavior_reset", "behavior_reset"]
+    assert sorted(entry.address for entry in entries) == [5, 6]

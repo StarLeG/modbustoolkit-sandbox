@@ -11,6 +11,8 @@ from app.api.models import (
     BehaviorIn,
     BehaviorOut,
     BehaviorsResponse,
+    ResetIn,
+    ResetResponse,
 )
 from app.api.services import AppServices
 from app.modbus.behavior import (
@@ -177,3 +179,42 @@ def post_behaviors_batch(
             )
         )
     return BatchResponse(applied=applied, removed=removed)
+
+
+@router.post("/behaviors/reset", response_model=ResetResponse)
+def post_behaviors_reset(
+    request: Request,
+    body: ResetIn,
+    services: ServicesDep,
+) -> ResetResponse:
+    """Сброс переопределений к дефолтам (TASK-304).
+
+    Без `slave` — все переопределения, с `slave` — одного слейва. Возвращает
+    число сброшенных (дефолтные привязки не считаются). Slave 10 поведений не
+    имеет → 400. В журнал пишется `behavior_reset` по каждой сброшенной привязке.
+    """
+    if body.slave == 10:
+        raise HTTPException(
+            status_code=400,
+            detail="slave 10: поведения не поддерживаются (IR вычисляются)",
+        )
+    doomed = [
+        binding
+        for binding, behavior in services.registry.items()
+        if (body.slave is None or binding[0] == body.slave)
+        and behavior is not default_behavior(*binding)
+    ]
+    count = services.registry.reset(body.slave)
+    ip = _client_ip(request)
+    for slave, area, address in doomed:
+        services.journal.add(
+            JournalEntry(
+                action="behavior_reset",
+                slave=slave,
+                area=area,
+                address=address,
+                source="web",
+                ip=ip,
+            )
+        )
+    return ResetResponse(reset=count)

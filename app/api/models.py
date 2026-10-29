@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.modbus.types import Area
 
@@ -71,3 +71,15 @@ class BatchResponse(BaseModel):
 
     applied: int
     removed: int
+
+
+class ResetIn(BaseModel):
+    """Сброс переопределений: без `slave` — все, иначе — одного слейва (TASK-304)."""
+
+    slave: int | None = Field(default=None, ge=1, le=10)
+
+
+class ResetResponse(BaseModel):
+    """Число сброшенных переопределений (дефолтные привязки не считаются)."""
+
+    reset: int
