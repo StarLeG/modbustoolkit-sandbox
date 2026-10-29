@@ -17,7 +17,7 @@
   - Подключить `pymodbus`, `fastapi`, `uvicorn`
 - [x] [P0] **TASK-003 · `docs/HRIR_SPEC.md`** — перенести спецификацию форматов в репозиторий
 - [x] [P0] **TASK-004 · `.env.example`** — все переменные из CLAUDE.md (Env)
-- [ ] [P0] **TASK-005 · CI: pytest + ruff + mypy** (если ещё нет) — baseline зелёный
+- [x] [P0] **TASK-005 · CI: pytest + ruff + mypy** (если ещё нет) — baseline зелёный
 
 ---
 
