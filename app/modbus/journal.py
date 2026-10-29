@@ -19,12 +19,14 @@ class JournalEntry:
 
     `source` — источник события ("modbus" | "web" | "engine" | …);
     `ip` — адрес инициатора, когда он известен (заполняется с TASK-505).
+    `area`/`address` — заполняются, когда событие привязано к адресу; для
+    событий уровня слейва (инъекции и т.п.) — None.
     """
 
     action: str
     slave: int
-    area: Area
-    address: int
+    area: Area | None = None
+    address: int | None = None
     value: Any = None
     source: str = "modbus"
     ip: str | None = None

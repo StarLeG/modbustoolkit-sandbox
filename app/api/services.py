@@ -12,6 +12,7 @@ from app.api.rate_limit import WriteRateLimiter
 from app.modbus.behavior import BehaviorRegistry, WritePolicy, make_write_policy
 from app.modbus.config import Config
 from app.modbus.engine import BehaviorEngine
+from app.modbus.injection import InjectionRegistry
 from app.modbus.journal import Journal
 from app.modbus.slave_map import SlaveMap
 from app.modbus.types import SLAVE_SPECS
@@ -28,10 +29,11 @@ class AppServices:
     journal: Journal
     write_policy: WritePolicy
     write_limiter: WriteRateLimiter
+    injections: InjectionRegistry
 
 
 def build_services(config: Config | None = None) -> AppServices:
-    """Собрать сервисы: реестр, карты 1..10, журнал, движок, политика записи.
+    """Собрать сервисы: реестры, карты 1..10, журнал, движок, политика записи.
 
     Значения регистров живут только в памяти (инвариант 9): перезапуск = сброс.
     """
@@ -42,6 +44,7 @@ def build_services(config: Config | None = None) -> AppServices:
     engine = BehaviorEngine(registry, maps, tick_ms=cfg.ENGINE_TICK_MS, journal=journal)
     write_policy = make_write_policy(registry, journal)
     write_limiter = WriteRateLimiter(cfg.WEB_MAX_WRITE_PER_MIN_PER_IP)
+    injections = InjectionRegistry(max_ttl_s=cfg.INJECTION_MAX_TTL_S)
     return AppServices(
         config=cfg,
         registry=registry,
@@ -50,4 +53,5 @@ def build_services(config: Config | None = None) -> AppServices:
         journal=journal,
         write_policy=write_policy,
         write_limiter=write_limiter,
+        injections=injections,
     )

@@ -11,6 +11,10 @@ from app.api.models import (
     BehaviorIn,
     BehaviorOut,
     BehaviorsResponse,
+    InjectClearIn,
+    InjectClearResponse,
+    InjectionIn,
+    InjectionOut,
     JournalEntryOut,
     JournalResponse,
     ResetIn,
@@ -30,6 +34,7 @@ from app.modbus.behavior import (
     default_behavior,
 )
 from app.modbus.codec import clamp_value, decode, encode
+from app.modbus.injection import Injection
 from app.modbus.journal import JournalEntry
 from app.modbus.slave10 import TIMESTAMP_ADDR
 from app.modbus.slave_map import ModbusMapError, SlaveMap
@@ -94,6 +99,22 @@ def _area_values(smap: SlaveMap, area: Area) -> dict[str, int | float | bool]:
                 raw = smap.get_registers(area, address, fmt.registers_per_value)
                 values[str(address)] = decode(raw, fmt)
     return values
+
+
+def _injection_out(injection: Injection) -> InjectionOut:
+    return InjectionOut(
+        id=injection.id,
+        kind=injection.kind,
+        slave=injection.slave,
+        area=injection.area,
+        address=injection.address,
+        count=injection.count,
+        code=injection.code,
+        delay_ms=injection.delay_ms,
+        ttl_s=injection.ttl_s,
+        created_at=injection.created_at,
+        expires_at=injection.expires_at,
+    )
 
 
 @router.get("/behaviors", response_model=BehaviorsResponse)
@@ -481,3 +502,83 @@ def get_journal(
         ],
         total=len(services.journal),
     )
+
+
+@router.post("/inject", response_model=InjectionOut)
+def post_inject(
+    request: Request,
+    body: InjectionIn,
+    services: ServicesDep,
+) -> InjectionOut:
+    """Зарегистрировать инъекцию ошибки (TASK-309).
+
+    Инъекция попадает в реестр с ленивым TTL ≤ `INJECTION_MAX_TTL_S`
+    (ADR-004 п. 6); влияние на Modbus-запросы — Эпик 6. Ошибки параметров →
+    400. Журнал: `inject` (`source="web"`).
+    """
+    try:
+        injection = services.injections.add(
+            body.kind,
+            body.slave,
+            area=body.area,
+            address=body.address,
+            count=body.count,
+            code=body.code,
+            delay_ms=body.delay_ms,
+            ttl_s=body.ttl_s,
+        )
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    services.journal.add(
+        JournalEntry(
+            action="inject",
+            slave=injection.slave,
+            area=injection.area,
+            address=injection.address,
+            value={
+                "id": injection.id,
+                "kind": injection.kind,
+                "code": injection.code,
+                "delay_ms": injection.delay_ms,
+                "ttl_s": injection.ttl_s,
+            },
+            source="web",
+            ip=_client_ip(request),
+        )
+    )
+    return _injection_out(injection)
+
+
+@router.post("/inject/clear", response_model=InjectClearResponse)
+def post_inject_clear(
+    request: Request,
+    body: InjectClearIn,
+    services: ServicesDep,
+) -> InjectClearResponse:
+    """Снять инъекции ошибок (TASK-309, TASK-605).
+
+    Фильтры: `id` — конкретная инъекция, `slave` — все инъекции слейва, без
+    фильтров — все. Возвращает число снятых; каждая фиксируется в журнале
+    (`inject_clear`, `source="web"`).
+    """
+    doomed = [
+        injection
+        for injection in services.injections.items()
+        if (body.id is None or injection.id == body.id)
+        and (body.slave is None or injection.slave == body.slave)
+    ]
+    cleared = services.injections.clear(injection_id=body.id, slave=body.slave)
+    ip = _client_ip(request)
+    for injection in doomed:
+        services.journal.add(
+            JournalEntry(
+                action="inject_clear",
+                slave=injection.slave,
+                area=injection.area,
+                address=injection.address,
+                value={"id": injection.id, "kind": injection.kind},
+                source="web",
+                ip=ip,
+            )
+        )
+    return InjectClearResponse(cleared=cleared)

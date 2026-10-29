@@ -5,6 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.modbus.injection import InjectionKind
 from app.modbus.types import Area, RegisterFormat
 
 
@@ -132,12 +133,15 @@ class Snapshot(BaseModel):
 
 
 class JournalEntryOut(BaseModel):
-    """Запись журнала (TASK-308, TASK-505)."""
+    """Запись журнала (TASK-308, TASK-505).
+
+    `area`/`address` — None для событий уровня слейва (например, инъекций).
+    """
 
     action: str
     slave: int
-    area: Area
-    address: int
+    area: Area | None
+    address: int | None
     value: Any = None
     source: str
     ip: str | None = None
@@ -165,3 +169,52 @@ class RestoreResponse(BaseModel):
     restored: int
     skipped_locked: int
     ignored: int
+
+
+class InjectionIn(BaseModel):
+    """Инъекция ошибки (TASK-309, ADR-004 п. 6).
+
+    `kind`: `"exception"` — отвечать кодом `code` (0x01/0x02/0x03/0x04/0x06);
+    `"delay"` — задержка `delay_ms` (0..5000) перед ответом; `"timeout"` — не
+    отвечать `ttl_s` секунд. Цель: весь слейв либо диапазон `area`/`address`/
+    `count` (по сетке значений). `ttl_s` ≤ `INJECTION_MAX_TTL_S` (ленивый
+    автосброс).
+    """
+
+    kind: InjectionKind
+    slave: int = Field(ge=1, le=10)
+    area: Area | None = None
+    address: int | None = Field(default=None, ge=1)
+    count: int | None = Field(default=None, ge=1)
+    code: int | None = None
+    delay_ms: int | None = Field(default=None, ge=0)
+    ttl_s: float | None = Field(default=None, gt=0)
+
+
+class InjectionOut(BaseModel):
+    """Активная инъекция: id, цель, параметры и срок жизни (TASK-309)."""
+
+    id: int
+    kind: InjectionKind
+    slave: int
+    area: Area | None
+    address: int | None
+    count: int | None
+    code: int | None
+    delay_ms: int | None
+    ttl_s: float
+    created_at: float
+    expires_at: float
+
+
+class InjectClearIn(BaseModel):
+    """Снятие инъекций (TASK-309, TASK-605): по `id`, по `slave` или все."""
+
+    id: int | None = Field(default=None, ge=1)
+    slave: int | None = Field(default=None, ge=1, le=10)
+
+
+class InjectClearResponse(BaseModel):
+    """Число снятых инъекций."""
+
+    cleared: int
