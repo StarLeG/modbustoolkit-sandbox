@@ -173,3 +173,42 @@ async def test_fc6_slave10_absent(client: AsyncModbusTcpClient) -> None:
     response = await client.write_register(1, 2024, device_id=10)
     assert response.isError()
     assert response.exception_code == 0x02
+
+
+# --- TASK-115: FC 16 — запись N HR (N ≤ 2, иначе 0x03) ---------------------------------
+
+
+async def test_fc16_write_two_registers(client: AsyncModbusTcpClient) -> None:
+    response = await client.write_registers(20, [0x1111, 0x2222], device_id=1)
+    assert not response.isError()
+    assert response.count == 2  # echo-ответ FC 16
+    back = await client.read_holding_registers(20, count=2, device_id=1)
+    assert back.registers == [0x1111, 0x2222]
+
+
+async def test_fc16_write_one_register(client: AsyncModbusTcpClient) -> None:
+    response = await client.write_registers(21, [0x3333], device_id=1)
+    assert not response.isError()
+    back = await client.read_holding_registers(21, count=1, device_id=1)
+    assert back.registers == [0x3333]
+
+
+async def test_fc16_three_registers_rejected(client: AsyncModbusTcpClient) -> None:
+    response = await client.write_registers(30, [1, 2, 3], device_id=1)
+    assert response.isError()
+    assert response.exception_code == 0x03
+    # Атомарность: при отказе не записано ни одного регистра.
+    back = await client.read_holding_registers(30, count=3, device_id=1)
+    assert back.registers == [0, 0, 0]
+
+
+async def test_fc16_on_slaves_1_to_9(client: AsyncModbusTcpClient) -> None:
+    for device_id in range(1, 10):
+        response = await client.write_registers(1, [0x0A0A, 0x0B0B], device_id=device_id)
+        assert not response.isError(), f"slave {device_id}"
+
+
+async def test_fc16_slave10_absent(client: AsyncModbusTcpClient) -> None:
+    response = await client.write_registers(1, [2024, 2025], device_id=10)
+    assert response.isError()
+    assert response.exception_code == 0x02
