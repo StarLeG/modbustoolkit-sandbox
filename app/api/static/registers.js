@@ -95,6 +95,85 @@ function formatValue(value) {
   }
 }
 
+function editable() {
+  return state.area === "cl" || state.area === "hr";
+}
+
+function showError(text) {
+  el("reg-status").textContent = text;
+}
+
+async function saveValue(address, raw) {
+  // Ввод: 0x… — hex, иначе число (для cl — 0/1/true/false); сервер клампует
+  let value;
+  const trimmed = raw.trim();
+  if (state.area === "cl") {
+    value = trimmed === "1" || trimmed.toLowerCase() === "true";
+  } else if (/^0x[0-9a-f]+$/i.test(trimmed)) {
+    value = parseInt(trimmed, 16);
+  } else {
+    value = Number(trimmed);
+    if (Number.isNaN(value)) {
+      showError("Не число: " + trimmed);
+      renderTable();
+      return;
+    }
+  }
+  try {
+    const response = await fetch("/api/modbus/write", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        slave: state.slave,
+        area: state.area,
+        address: address,
+        value: value,
+      }),
+    });
+    const body = await response.json();
+    if (!response.ok) {
+      showError(
+        "Запись отклонена (" + response.status + "): " + (body.detail || response.statusText)
+      );
+      renderTable();
+      return;
+    }
+    showError("");
+    state.values.set(address, body.value);
+    renderTable();
+  } catch (error) {
+    showError("Ошибка записи: " + error);
+    renderTable();
+  }
+}
+
+function startEdit(address) {
+  const cell = el("reg-cell-" + address);
+  cell.classList.add("editing");  // WS-кадры не трогают ячейку до конца правки
+  cell.textContent = "";
+  const input = document.createElement("input");
+  input.value = state.values.has(address) ? String(state.values.get(address)) : "";
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = "✓";
+  button.addEventListener("mousedown", function (event) {
+    event.preventDefault(); // blur не прерывает правку перед нажатием
+  });
+  button.addEventListener("click", function () {
+    saveValue(address, input.value);
+  });
+  input.addEventListener("keydown", function (event) {
+    if (event.key === "Enter") saveValue(address, input.value);
+    if (event.key === "Escape") renderTable();
+  });
+  input.addEventListener("blur", function () {
+    renderTable(); // отмена
+  });
+  cell.appendChild(input);
+  cell.appendChild(button);
+  input.focus();
+}
+
 function addressesOf(area) {
   const out = [];
   for (const [start, stop, step] of spec().areas[area]) {
@@ -151,6 +230,13 @@ function renderTable() {
     cellValue.textContent = state.values.has(address)
       ? formatValue(state.values.get(address))
       : "—";
+    if (editable()) {
+      cellValue.classList.add("editable");
+      cellValue.title = "Нажмите, чтобы изменить (CL/HR общие, last-write-wins)";
+      cellValue.addEventListener("click", function () {
+        startEdit(address);
+      });
+    }
     row.appendChild(cellAddress);
     row.appendChild(cellValue);
     body.appendChild(row);
@@ -166,7 +252,9 @@ function applyFrame(frame) {
   for (const [address, value] of Object.entries(values)) {
     state.values.set(Number(address), value);
     const cell = el("reg-cell-" + address);
-    if (cell) cell.textContent = formatValue(value);
+    if (cell && !cell.classList.contains("editing")) {
+      cell.textContent = formatValue(value);
+    }
   }
 }
 

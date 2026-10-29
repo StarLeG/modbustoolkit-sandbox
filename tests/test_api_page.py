@@ -92,6 +92,25 @@ def test_registers_js_formats_values() -> None:
         assert fragment in js, fragment
 
 
+def test_registers_page_has_edit_warning() -> None:
+    """Плашка про перезапись при inline-редактировании CL/HR (TASK-713)."""
+    with _client() as client:
+        response = client.get("/registers")
+    html = response.text
+    assert "last-write-wins" in html
+    assert "перезаписана" in html
+    assert 'id="reg-status"' in html
+
+
+def test_registers_js_inline_edit() -> None:
+    """Inline-редактор CL/HR пишет через REST /write (TASK-713)."""
+    with _client() as client:
+        response = client.get("/static/registers.js")
+    js = response.text
+    for fragment in ("/api/modbus/write", "startEdit", "saveValue"):
+        assert fragment in js, fragment
+
+
 def test_injections_page_has_clear_button() -> None:
     """Кнопка «Сбросить инъекции» → REST /inject/clear (TASK-605).
 

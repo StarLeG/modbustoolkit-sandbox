@@ -236,6 +236,10 @@ def _registers_body() -> str:
         '<p class="note">Значения живые (WS <code>/ws/state</code>), общие для всех '
         "подключений: запись любого пользователя сразу видна остальным (shared "
         "last-write-wins).</p>\n"
+        '<div class="banner" role="status">⚠ Редактирование CL/HR доступно прямо в '
+        "таблице (клик по значению). Значения общие: запись применяется по правилу "
+        "shared last-write-wins и в любой момент может быть перезаписана другим "
+        "пользователем.</div>\n"
         "<p>\n"
         f'  <label>Unit ID <select id="reg-slave">{slave_options}</select></label>\n'
         '  <label>Область <select id="reg-area"></select></label>\n'
@@ -246,6 +250,7 @@ def _registers_body() -> str:
         "  <thead><tr><th>Адрес</th><th>Значение</th></tr></thead>\n"
         '  <tbody id="reg-body"></tbody>\n'
         "</table>\n"
+        '<p id="reg-status" role="status"></p>\n'
         "<p>\n"
         '  <button id="reg-prev" type="button">← Назад</button>\n'
         '  <span id="reg-page" role="status"></span>\n'

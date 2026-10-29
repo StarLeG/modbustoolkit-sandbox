@@ -90,6 +90,18 @@ table.values th {
   margin: 0 0.75rem;
 }
 
+table.values td.editable {
+  cursor: pointer;
+}
+
+table.values td.editable:hover {
+  background: #eff6ff;
+}
+
+table.values td input {
+  width: 7rem;
+}
+
 .note {
   color: #555;
   font-size: 0.95rem;
