@@ -361,6 +361,37 @@ class CountdownGenerator:
         return max(self._min, self._start - self._step * n)
 
 
+class StepGenerator:
+    """`step`: циклический перебор списка `values`, смена раз в `interval_s`."""
+
+    is_static = False
+
+    def __init__(
+        self,
+        params: dict[str, Any],
+        binding: Binding,
+        ctx: GeneratorContext,
+        rng: random.Random,
+    ) -> None:
+        _ = binding, ctx, rng
+        raw = params.get("values", (0, 1))
+        if not isinstance(raw, (list, tuple)):
+            raise TypeError(f"step: values должен быть списком, получено: {raw!r}")
+        values: list[int | float] = []
+        for item in raw:
+            if isinstance(item, bool) or not isinstance(item, (int, float)):
+                raise TypeError(f"step: элемент values должен быть числом, получено: {item!r}")
+            values.append(item)
+        if not values:
+            raise ValueError("step: values не должен быть пустым")
+        self._values = values
+        self._interval = _positive(params, "interval_s", 1.0)
+
+    def update(self, now: float) -> int | float:
+        n = math.floor(now / self._interval)
+        return self._values[n % len(self._values)]
+
+
 def create_generator(
     behavior: Behavior,
     binding: Binding,
@@ -395,4 +426,6 @@ def create_generator(
         return RampOneshotGenerator(params, binding, ctx, rng)
     if behavior.kind == "countdown":
         return CountdownGenerator(params, binding, ctx, rng)
+    if behavior.kind == "step":
+        return StepGenerator(params, binding, ctx, rng)
     raise ValueError(f"поведение {behavior.kind!r} ещё не реализовано")

@@ -383,3 +383,36 @@ def test_countdown_validation() -> None:
         _gen("countdown", {"step": 0})
     with pytest.raises(ValueError, match="start"):
         _gen("countdown", {"start": 5, "min": 10})
+
+
+# --- TASK-221: step --------------------------------------------------------------------
+
+
+def test_step_cycles_values() -> None:
+    gen = _gen("step", {"values": [10, 20, 30], "interval_s": 1})
+    assert gen.update(0.0) == 10
+    assert gen.update(0.5) == 10
+    assert gen.update(1.0) == 20
+    assert gen.update(2.0) == 30
+    assert gen.update(3.0) == 10  # цикл
+    assert gen.update(7.5) == 20
+
+
+def test_step_float_values_and_fast_interval() -> None:
+    gen = _gen("step", {"values": [0.5, -1.5], "interval_s": 0.1})
+    assert gen.update(0.0) == 0.5
+    assert gen.update(0.1) == -1.5
+    assert gen.update(0.25) == 0.5
+
+
+def test_step_validation() -> None:
+    with pytest.raises(ValueError, match="values"):
+        _gen("step", {"values": []})
+    with pytest.raises(TypeError, match="values"):
+        _gen("step", {"values": "1,2"})
+    with pytest.raises(TypeError, match="values"):
+        _gen("step", {"values": [1, "x"]})
+    with pytest.raises(TypeError, match="values"):
+        _gen("step", {"values": [True]})
+    with pytest.raises(ValueError, match="interval_s"):
+        _gen("step", {"values": [1], "interval_s": -1})

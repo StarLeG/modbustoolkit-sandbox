@@ -75,7 +75,7 @@
 - [x] [P1] **TASK-218 · random_walk** (`min, max, step, mean_reversion`)
 - [x] [P1] **TASK-219 · ramp_oneshot** (`from, to, duration_s, then`)
 - [x] [P1] **TASK-220 · countdown** (`start, step, min`)
-- [ ] [P2] **TASK-221 · step** (`values, interval_s`)
+- [x] [P2] **TASK-221 · step** (`values, interval_s`)
 - [ ] [P2] **TASK-222 · follow** (`source: "hr:15"` — копия другого регистра)
 
 ### 2.3 Дискретные поведения
