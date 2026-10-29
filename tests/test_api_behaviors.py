@@ -1,6 +1,8 @@
-"""TASK-301: GET /api/modbus/behaviors — полный конфиг поведений (ADR-004).
+"""TASK-301/302: REST поведений (ADR-004).
 
-Каркас `app/api/` + чтение реестра с фильтрами slave/area/only_overrides.
+TASK-301 — GET /api/modbus/behaviors: полный конфиг с фильтрами
+slave/area/only_overrides. TASK-302 — PUT одной привязки: нормализация
+value-параметров, журнал behavior_set, ошибки 400/422.
 """
 from __future__ import annotations
 
@@ -89,3 +91,81 @@ def test_get_behaviors_bad_params_rejected() -> None:
         assert client.get("/api/modbus/behaviors", params={"slave": 0}).status_code == 422
         assert client.get("/api/modbus/behaviors", params={"slave": 11}).status_code == 422
         assert client.get("/api/modbus/behaviors", params={"area": "zz"}).status_code == 422
+
+
+# --- TASK-302: PUT /api/modbus/behaviors/{slave}/{area}/{address} -------------------------
+
+
+def test_put_behavior_sets_override() -> None:
+    services = build_services(Config())
+    with _client(services) as client:
+        response = client.put(
+            "/api/modbus/behaviors/1/hr/5",
+            json={"kind": "counter", "params": {"step": 2}, "locked": True},
+        )
+    assert response.status_code == 200
+    body = response.json()
+    assert body == {
+        "slave": 1,
+        "area": "hr",
+        "address": 5,
+        "kind": "counter",
+        "params": {"step": 2},
+        "locked": True,
+        "is_default": False,
+    }
+    stored = services.registry.get(1, "hr", 5)
+    assert stored is not None
+    assert stored.kind == "counter"
+    assert stored.locked is True
+
+
+def test_put_behavior_normalizes_params() -> None:
+    """value=70000 на UINT16-слейве → 65535 (TASK-241, ADR-004)."""
+    with _client() as client:
+        response = client.put(
+            "/api/modbus/behaviors/1/hr/5", json={"kind": "constant", "params": {"value": 70000}}
+        )
+    assert response.status_code == 200
+    assert response.json()["params"] == {"value": 65535}
+
+
+def test_put_behavior_journal_entry() -> None:
+    services = build_services(Config())
+    with _client(services) as client:
+        client.put(
+            "/api/modbus/behaviors/2/ir/3",
+            json={"kind": "counter", "params": {"step": 1}},
+        )
+    entry = services.journal.entries()[-1]
+    assert entry.action == "behavior_set"
+    assert (entry.slave, entry.area, entry.address) == (2, "ir", 3)
+    assert entry.source == "web"
+    assert entry.ip is not None
+    assert entry.value == {"kind": "counter", "params": {"step": 1}, "locked": False}
+
+
+def test_put_behavior_domain_errors() -> None:
+    cases = [
+        ("/api/modbus/behaviors/1/hr/1", {"kind": "saw_wave"}, "неизвестный kind"),
+        ("/api/modbus/behaviors/10/ir/1", {"kind": "counter"}, "slave 10"),
+        ("/api/modbus/behaviors/2/hr/2", {"kind": "counter"}, "вне карты"),  # чётный адрес
+        ("/api/modbus/behaviors/1/cl/1", {"kind": "counter"}, "не применим"),  # kind для hr/ir
+        ("/api/modbus/behaviors/1/hr/5", {"kind": "toggle"}, "не применим"),  # kind для cl/di
+    ]
+    with _client() as client:
+        for path, payload, match in cases:
+            response = client.put(path, json=payload)
+            assert response.status_code == 400, (path, payload, response.text)
+            assert match in response.json()["detail"]
+
+
+def test_put_behavior_schema_errors() -> None:
+    with _client() as client:
+        assert client.put("/api/modbus/behaviors/1/hr/5", json={}).status_code == 422  # нет kind
+        assert (
+            client.put("/api/modbus/behaviors/0/hr/5", json={"kind": "counter"}).status_code == 422
+        )
+        assert (
+            client.put("/api/modbus/behaviors/1/zz/5", json={"kind": "counter"}).status_code == 422
+        )

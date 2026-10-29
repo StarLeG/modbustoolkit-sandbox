@@ -8,6 +8,18 @@ from pydantic import BaseModel
 from app.modbus.types import Area
 
 
+class BehaviorIn(BaseModel):
+    """Входное поведение для установки (TASK-302).
+
+    `kind` проверяется моделью `Behavior` (400 на неизвестный), value-параметры
+    приводятся к формату регистра при установке (TASK-241).
+    """
+
+    kind: str
+    params: dict[str, Any] = {}
+    locked: bool = False
+
+
 class BehaviorOut(BaseModel):
     """Поведение привязки в REST-представлении."""
 
