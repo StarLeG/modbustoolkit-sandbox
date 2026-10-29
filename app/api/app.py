@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.api.pages import pages_router
 from app.api.routes import health_router, router
 from app.api.services import AppServices, build_services
 from app.api.ws import ws_router
@@ -45,5 +46,6 @@ def create_app(
     app.state.services = services
     app.include_router(router)
     app.include_router(health_router)
+    app.include_router(pages_router)
     app.include_router(ws_router)
     return app
