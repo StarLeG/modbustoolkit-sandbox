@@ -8,7 +8,7 @@
 
 ## Эпик 0 · Discovery и фундамент
 
-- [ ] [P0] **TASK-001 · Изучить проект и подтвердить стек**
+- [x] [P0] **TASK-001 · Изучить проект и подтвердить стек**
   - `ls`, `pyproject.toml`, `package.json`, `Dockerfile`, `docker-compose.yml`, `nginx/`, `.github/`
   - Записать вывод в `docs/adr/ADR-000-stack.md`
   - Если стек ≠ ожидаемому — согласовать с владельцем
