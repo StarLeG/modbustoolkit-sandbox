@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import math
 import random
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, cast
 
-from app.modbus.behavior import Behavior, Binding
+from app.modbus.behavior import Behavior, Binding, check_binding
+from app.modbus.types import Area
 
 
 class GeneratorContext(Protocol):
@@ -392,6 +393,52 @@ class StepGenerator:
         return self._values[n % len(self._values)]
 
 
+def _parse_source(raw: str, slave: int) -> Binding:
+    """Разобрать `source: "hr:15"` в привязку `(slave, area, address)`."""
+    area_str, sep, addr_str = raw.partition(":")
+    if not sep or not addr_str:
+        raise ValueError(f"source должен быть вида 'area:address', получено: {raw!r}")
+    if area_str not in ("cl", "di", "hr", "ir"):
+        raise ValueError(f"source: неизвестная область {area_str!r}")
+    area = cast("Area", area_str)
+    try:
+        address = int(addr_str)
+    except ValueError:
+        raise ValueError(f"source: адрес должен быть целым, получено: {addr_str!r}") from None
+    check_binding(slave, area, address)
+    return (slave, area, address)
+
+
+class FollowGenerator:
+    """`follow`: значение берётся из другого регистра/бита того же слейва.
+
+    `source` — строка вида `"hr:15"` (область и value-grid адрес источника);
+    источник cl/di читается как 0/1.
+    """
+
+    is_static = False
+
+    def __init__(
+        self,
+        params: dict[str, Any],
+        binding: Binding,
+        ctx: GeneratorContext,
+        rng: random.Random,
+    ) -> None:
+        _ = rng
+        self._ctx = ctx
+        raw = params.get("source")
+        if not isinstance(raw, str):
+            raise TypeError(
+                f"follow: source должен быть строкой 'area:address', получено: {raw!r}"
+            )
+        self._source = _parse_source(raw, binding[0])
+
+    def update(self, now: float) -> int | float:
+        _ = now
+        return self._ctx.read_value(self._source)
+
+
 def create_generator(
     behavior: Behavior,
     binding: Binding,
@@ -428,4 +475,6 @@ def create_generator(
         return CountdownGenerator(params, binding, ctx, rng)
     if behavior.kind == "step":
         return StepGenerator(params, binding, ctx, rng)
+    if behavior.kind == "follow":
+        return FollowGenerator(params, binding, ctx, rng)
     raise ValueError(f"поведение {behavior.kind!r} ещё не реализовано")

@@ -21,6 +21,8 @@ class FakeCtx:
         self.bits: dict[Binding, bool] = {}
 
     def read_value(self, binding: Binding) -> int | float:
+        if binding[1] in ("cl", "di"):
+            return 1 if self.bits.get(binding, False) else 0  # как BehaviorEngine.read_value
         return self.values.get(binding, 0)
 
     def read_bit(self, binding: Binding) -> bool:
@@ -416,3 +418,46 @@ def test_step_validation() -> None:
         _gen("step", {"values": [True]})
     with pytest.raises(ValueError, match="interval_s"):
         _gen("step", {"values": [1], "interval_s": -1})
+
+
+# --- TASK-222: follow ------------------------------------------------------------------
+
+
+def test_follow_reads_source_value() -> None:
+    ctx = FakeCtx()
+    ctx.values[(1, "hr", 15)] = 42
+    gen = _gen("follow", {"source": "hr:15"}, ctx=ctx)
+    assert gen.update(0.0) == 42
+
+
+def test_follow_tracks_live_changes() -> None:
+    ctx = FakeCtx()
+    ctx.values[(1, "hr", 15)] = 1
+    gen = _gen("follow", {"source": "hr:15"}, ctx=ctx)
+    assert gen.update(0.0) == 1
+    ctx.values[(1, "hr", 15)] = 77  # источник изменился
+    assert gen.update(1.0) == 77
+
+
+def test_follow_bit_source_as_zero_one() -> None:
+    ctx = FakeCtx()
+    ctx.bits[(1, "cl", 3)] = True
+    gen = _gen("follow", {"source": "cl:3"}, ctx=ctx)
+    assert gen.update(0.0) == 1
+    ctx.bits[(1, "cl", 3)] = False
+    assert gen.update(1.0) == 0
+
+
+def test_follow_validation() -> None:
+    with pytest.raises(TypeError, match="source"):
+        _gen("follow")  # source обязателен
+    with pytest.raises(ValueError, match="area:address"):
+        _gen("follow", {"source": "hr"})
+    with pytest.raises(ValueError, match="область"):
+        _gen("follow", {"source": "xx:1"})
+    with pytest.raises(ValueError, match="целым"):
+        _gen("follow", {"source": "hr:x"})
+    with pytest.raises(ValueError, match="адрес"):
+        _gen("follow", {"source": "hr:0"})  # адрес вне карты
+    with pytest.raises(ValueError, match="адрес"):
+        _gen("follow", {"source": "hr:2"}, slave=2)  # слейв 2: только нечётные value-grid
