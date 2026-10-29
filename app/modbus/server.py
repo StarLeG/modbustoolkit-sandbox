@@ -259,6 +259,13 @@ class GuardedRequestHandler(ServerRequestHandler):
                     injection.slave,
                 )
                 await asyncio.sleep((injection.delay_ms or 0) / 1000.0)  # не блокирует loop
+            if injection.kind == "timeout":
+                log.debug(
+                    "modbus: инъекция #%s — молчание до истечения TTL (slave %s)",
+                    injection.id,
+                    injection.slave,
+                )
+                return  # запрос поглощается: без ответа и без обработки (ADR-007 п. 5)
         token = _PEER_IP.set(self._peer_ip)
         try:
             await super().handle_request()  # type: ignore[no-untyped-call]

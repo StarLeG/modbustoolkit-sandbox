@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import asyncio
+import struct
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -210,3 +211,79 @@ async def test_delay_injection_does_not_block_other_connections(config: Config) 
             assert not response.isError()
         finally:
             fast.close()
+
+
+# --- TASK-603: timeout-инъекции --------------------------------------------------------
+
+
+def _mbap(unit: int, pdu: bytes, transaction_id: int = 1) -> bytes:
+    return struct.pack(">HHHB", transaction_id, 0, len(pdu) + 1, unit) + pdu
+
+
+def _read_frame(unit: int, address: int, count: int) -> bytes:
+    return _mbap(unit, struct.pack(">BHH", 3, address, count))
+
+
+def _write_frame(unit: int, address: int, value: int) -> bytes:
+    return _mbap(unit, struct.pack(">BHH", 6, address, value))
+
+
+async def _raw_request(config: Config, payload: bytes, timeout: float = 0.25) -> bytes | None:
+    """Отправить сырой MBAP-фрейм; None — сервер молчал `timeout` секунд (без разрыва)."""
+    reader, writer = await asyncio.open_connection("127.0.0.1", config.MODBUS_TCP_PORT)
+    try:
+        writer.write(payload)
+        await writer.drain()
+        try:
+            return await asyncio.wait_for(reader.read(256), timeout)
+        except TimeoutError:
+            return None
+    finally:
+        writer.close()
+        await writer.wait_closed()
+
+
+async def test_timeout_injection_swallows_requests(config: Config) -> None:
+    """Под timeout ни ответа, ни обработки; снятие возвращает нормальный обмен."""
+    injections = InjectionRegistry()
+    injections.add("timeout", 1, ttl_s=30)
+    async with _serving(config, injections) as (_client, maps):
+        assert await _raw_request(config, _read_frame(1, 5, 1)) is None
+        assert await _raw_request(config, _write_frame(1, 5, 0x1234)) is None
+        assert maps[1].get_registers("hr", 5, 1) == [0]  # запись поглощена
+        injections.clear()
+        data = await _raw_request(config, _read_frame(1, 5, 1), timeout=1.0)
+        assert data is not None
+        assert data[7] == 3  # function code ответа на чтение
+
+
+async def test_timeout_injection_target_slave(config: Config) -> None:
+    """Молчит только целевой слейв; остальные отвечают штатно."""
+    injections = InjectionRegistry()
+    injections.add("timeout", 2, ttl_s=30)
+    async with _serving(config, injections) as (_client, _maps):
+        assert await _raw_request(config, _read_frame(2, 5, 1)) is None
+        data = await _raw_request(config, _read_frame(1, 5, 1), timeout=1.0)
+        assert data is not None
+
+
+async def test_timeout_connection_keeps_working_after_clear(config: Config) -> None:
+    """Поглощённые запросы не ломают соединение: после снятия ответы идут (ADR-007 п. 5)."""
+    injections = InjectionRegistry()
+    injections.add("timeout", 1, ttl_s=30)
+    async with _serving(config, injections) as (_client, maps):
+        reader, writer = await asyncio.open_connection("127.0.0.1", config.MODBUS_TCP_PORT)
+        try:
+            writer.write(_write_frame(1, 5, 0x1234))
+            await writer.drain()
+            await asyncio.sleep(0.1)
+            assert maps[1].get_registers("hr", 5, 1) == [0]  # молча поглощена
+            injections.clear()
+            writer.write(_write_frame(1, 5, 0x1234))
+            await writer.drain()
+            data = await asyncio.wait_for(reader.read(256), 1.0)
+            assert data and data[7] == 6  # echo-ответ FC 6
+            assert maps[1].get_registers("hr", 5, 1) == [0x1234]
+        finally:
+            writer.close()
+            await writer.wait_closed()
