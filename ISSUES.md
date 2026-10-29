@@ -125,7 +125,7 @@
 - [x] [P0] **TASK-502 · Rate-limit Modbus-записей** (`MODBUS_MAX_WRITE_PER_SEC`)
 - [x] [P0] **TASK-503 · Rate-limit UI-записей** (`WEB_MAX_WRITE_PER_MIN_PER_IP`)
 - [x] [P0] **TASK-504 · Плашка «публичный сервер»** в UI (обязательный текст)
-- [ ] [P1] **TASK-505 · Журнал событий** (ring buffer `JOURNAL_SIZE`)
+- [x] [P1] **TASK-505 · Журнал событий** (ring buffer `JOURNAL_SIZE`)
   - время, IP, источник (modbus/web), slave, area, address, action, value
 
 ---

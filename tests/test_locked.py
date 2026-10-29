@@ -138,6 +138,7 @@ async def test_client_write_to_locked_register_gets_0x04(config: Config) -> None
         assert not ok.isError()
         client.close()
     assert len(journal) == 1
+    assert journal.entries()[0].ip == "127.0.0.1"  # ip пира модbus-соединения (TASK-505)
 
 
 async def test_client_write_to_locked_coil_gets_0x04(config: Config) -> None:

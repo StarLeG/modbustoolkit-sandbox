@@ -17,6 +17,7 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from typing import Any
 
 from pymodbus.constants import ExcCodes
@@ -59,6 +60,10 @@ _EXC_BY_CODE: dict[int, ExcCodes] = {
     EXC_ILLEGAL_VALUE: ExcCodes.ILLEGAL_VALUE,
     EXC_DEVICE_FAILURE: ExcCodes.DEVICE_FAILURE,
 }
+
+#: IP текущего Modbus-клиента для журнала (TASK-505, ADR-006 п. 4):
+#: устанавливается на время обработки запроса, вне запроса — None.
+_PEER_IP: ContextVar[str | None] = ContextVar("modbus_peer_ip", default=None)
 
 
 class RejectedRequest(ModbusPDU):
@@ -140,7 +145,7 @@ class SlaveMapContext(ModbusServerContext):
             if func_code == 16 and len(values) > FC16_MAX_REGISTERS:
                 return ExcCodes.ILLEGAL_VALUE
             if self._write_policy is not None:
-                self._write_policy(device_id, area, address, values)
+                self._write_policy(device_id, area, address, values, ip=_PEER_IP.get())
             if area in ("cl", "di"):
                 smap.set_bits(area, address, [bool(v) for v in values])
             else:
@@ -193,11 +198,12 @@ class GuardedRequestHandler(ServerRequestHandler):
             self._peer_ip = None
 
     async def handle_request(self) -> None:
-        """Обработка запроса с rate-limitом записей FC 5/6/16 (TASK-502).
+        """Обработка запроса: rate-limit записей и ip для журнала (TASK-502/505).
 
         Превышение `MODBUS_MAX_WRITE_PER_SEC` → 0x06 (Device Busy), запись не
         применяется. В журнал такие отказы не пишутся — флуд исчерпал бы ring
-        buffer (ADR-006 п. 3), фиксируются только debug-логом.
+        buffer (ADR-006 п. 3), фиксируются только debug-логом. На время запроса
+        в `_PEER_IP` кладётся IP пира — для атрибуции modbus-событий журнала.
         """
         pdu = self.last_pdu
         if (
@@ -211,7 +217,11 @@ class GuardedRequestHandler(ServerRequestHandler):
             response.dev_id = pdu.dev_id
             self.server_send(response, self.last_addr)  # type: ignore[no-untyped-call]
             return
-        await super().handle_request()  # type: ignore[no-untyped-call]
+        token = _PEER_IP.set(self._peer_ip)
+        try:
+            await super().handle_request()  # type: ignore[no-untyped-call]
+        finally:
+            _PEER_IP.reset(token)
 
 
 class LimitedTcpServer(ModbusTcpServer):
