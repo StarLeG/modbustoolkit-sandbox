@@ -55,20 +55,20 @@
 ## Эпик 2 · Движок поведений
 
 ### 2.1 Каркас
-- [ ] [P0] **TASK-201 · Модель `Behavior` и реестр `(slave, area, address) → Behavior`**
-- [ ] [P0] **TASK-202 · Тик-цикл 100 мс** (asyncio task), graceful stop
-- [ ] [P0] **TASK-203 · `locked: bool`** — запись при locked → 0x04 + журнал
-- [ ] [P0] **TASK-204 · try/except вокруг каждого поведения** — ошибка → `constant 0` + лог
+- [x] [P0] **TASK-201 · Модель `Behavior` и реестр `(slave, area, address) → Behavior`**
+- [x] [P0] **TASK-202 · Тик-цикл 100 мс** (asyncio task), graceful stop
+- [x] [P0] **TASK-203 · `locked: bool`** — запись при locked → 0x04 + журнал
+- [x] [P0] **TASK-204 · try/except вокруг каждого поведения** — ошибка → `constant 0` + лог
 - [ ] [P0] **TASK-205 · Дефолтные поведения**
   - HR/CL — `constant 0`, `locked=False`
   - IR slaves 1–9 — `counter step=1`, `locked=True`
   - DI slaves 1–9 — `counter_bits` (биты счётчика секунд), `locked=True`
 
 ### 2.2 Числовые поведения
-- [ ] [P0] **TASK-211 · constant**
-- [ ] [P0] **TASK-212 · counter** (`start, step, min, max, wrap`)
-- [ ] [P0] **TASK-213 · sawtooth** (`min, max, period_s, phase`)
-- [ ] [P0] **TASK-214 · triangle** (`min, max, period_s, phase`)
+- [x] [P0] **TASK-211 · constant**
+- [x] [P0] **TASK-212 · counter** (`start, step, min, max, wrap`)
+- [x] [P0] **TASK-213 · sawtooth** (`min, max, period_s, phase`)
+- [x] [P0] **TASK-214 · triangle** (`min, max, period_s, phase`)
 - [x] [P0] **TASK-215 · meander** (`min, max, period_s, duty, phase`)
 - [x] [P1] **TASK-216 · sine** (`min, max, period_s, phase`)
 - [x] [P1] **TASK-217 · random_uniform** (`min, max`)
