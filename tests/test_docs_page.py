@@ -92,3 +92,53 @@ def test_docs_page_has_api_pointers() -> None:
         html = client.get("/docs").text
     for fragment in ("<h3>API</h3>", "/api/docs", "/ws/state", "/ws/events"):
         assert fragment in html, fragment
+
+
+def test_docs_page_has_code_examples() -> None:
+    """Примеры кода с кнопками копирования (TASK-752)."""
+    with _client() as client:
+        html = client.get("/docs").text
+    for fragment in (
+        "Примеры кода",
+        "pymodbus",
+        "modbus-serial",
+        "NModbus",
+        'id="example-python"',
+        'id="example-nodejs"',
+        'id="example-csharp"',
+        'data-copy="example-python"',
+        'data-copy="example-nodejs"',
+        'data-copy="example-csharp"',
+        "Копировать",
+        "/static/examples.js",
+    ):
+        assert fragment in html, fragment
+
+
+def test_docs_page_examples_addressing() -> None:
+    """Примеры: хост, порт, device_id, shared last-write-wins (TASK-752)."""
+    with _client() as client:
+        html = client.get("/docs").text
+    for fragment in (
+        "modbustoolkit.electroman.by",
+        "5020",
+        "device_id=1",
+        "read_holding_registers",
+        "write_registers",
+        "не более 2 регистров",
+        "readHoldingRegisters",
+        "ReadHoldingRegisters",
+        "WriteSingleRegister",
+        "shared last-write-wins",
+    ):
+        assert fragment in html, fragment
+
+
+def test_examples_js_copies_to_clipboard() -> None:
+    """JS-модуль примеров копирует через Clipboard API (TASK-752)."""
+    with _client() as client:
+        response = client.get("/static/examples.js")
+    assert response.status_code == 200
+    js = response.text
+    for fragment in ("data-copy", "navigator.clipboard", "writeText", "copy-btn"):
+        assert fragment in js, fragment

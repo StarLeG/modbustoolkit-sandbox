@@ -270,7 +270,116 @@ def _docs_body(config: Config) -> str:
         "<p>REST — Swagger UI: <code>/api/docs</code> (префикс "
         "<code>/api/modbus/</code>). WebSocket: <code>/ws/state</code> — "
         "live-состояние слейва, <code>/ws/events</code> — события журнала. "
-        "Примеры кода для популярных Modbus-клиентов — ниже.</p>"
+        "Примеры кода для популярных Modbus-клиентов — ниже.</p>\n"
+        + _examples_section()
+    )
+
+
+#: Пример Python (pymodbus) для «Документации» (TASK-752). Обычная строка:
+#: фигурные скобки f-строк остаются литеральными.
+_EXAMPLE_PYTHON = """\
+# pip install "pymodbus>=3.6"
+from pymodbus.client import ModbusTcpClient
+
+client = ModbusTcpClient("modbustoolkit.electroman.by", port=5020)
+if not client.connect():
+    raise SystemExit("нет соединения с сервером")
+
+# FC 3: читаем 10 регистров HR слейва 1 (uint16) с адреса 1
+result = client.read_holding_registers(1, count=10, device_id=1)
+if result.isError():
+    raise SystemExit(f"ошибка Modbus: {result}")
+print(result.registers)
+
+# FC 4: input registers (на slave 10 — только они)
+result = client.read_input_registers(1, count=8, device_id=10)
+
+# FC 5 / FC 6 / FC 16: запись CL и HR (значения общие для всех!)
+client.write_coil(1, True, device_id=1)
+client.write_register(1, 42, device_id=1)
+client.write_registers(1, [1, 2], device_id=1)  # FC 16 — не более 2 регистров
+
+client.close()
+"""
+
+#: Пример Node.js (modbus-serial) для «Документации» (TASK-752).
+_EXAMPLE_NODEJS = """\
+// npm install modbus-serial
+const ModbusRTU = require("modbus-serial");
+
+async function main() {
+  const client = new ModbusRTU();
+  await client.connectTCP("modbustoolkit.electroman.by", { port: 5020 });
+  client.setID(1); // unit ID 1..10
+
+  // FC 3: 10 регистров HR с адреса 1
+  const result = await client.readHoldingRegisters(1, 10);
+  console.log(result.data);
+
+  // FC 4: input registers (на slave 10 — только они)
+  client.setID(10);
+  console.log((await client.readInputRegisters(1, 8)).data);
+
+  // FC 5 / FC 6: запись CL и HR (значения общие для всех!)
+  client.setID(1);
+  await client.writeCoil(1, true);
+  await client.writeRegister(1, 42);
+
+  client.close();
+}
+
+main().catch(console.error);
+"""
+
+#: Пример C# (NModbus) для «Документации» (TASK-752).
+_EXAMPLE_CSHARP = """\
+// dotnet add package NModbus
+using System.Net.Sockets;
+using NModbus;
+
+var tcp = new TcpClient("modbustoolkit.electroman.by", 5020);
+var client = new ModbusFactory().CreateMaster(tcp);
+
+// FC 3: 10 регистров HR слейва 1 (uint16) с адреса 1
+ushort[] regs = client.ReadHoldingRegisters(slaveId: 1, startAddress: 1, numberOfPoints: 10);
+Console.WriteLine(string.Join(", ", regs));
+
+// FC 4: input registers (на slave 10 — только они)
+ushort[] ir = client.ReadInputRegisters(1, 1, 8);
+
+// FC 5 / FC 6: запись CL и HR (значения общие для всех!)
+client.WriteSingleCoil(1, 1, true);
+client.WriteSingleRegister(1, 1, 42);
+"""
+
+
+def _example_block(title: str, code_id: str, code: str) -> str:
+    """Один пример: заголовок, блок кода и кнопка копирования (TASK-752)."""
+    return (
+        f"<h4>{escape(title)}</h4>\n"
+        f'<pre><code id="{code_id}">{escape(code)}</code></pre>\n'
+        f'<p><button type="button" class="copy-btn" data-copy="{code_id}">'
+        "Копировать</button></p>\n"
+    )
+
+
+def _examples_section() -> str:
+    """Секция «Примеры кода» на «Документации» (TASK-752).
+
+    Готовые сниппеты чтения/записи для pymodbus, modbus-serial и NModbus;
+    кнопки копирования обслуживает `static/examples.js`.
+    """
+    return (
+        "<h3>Примеры кода</h3>\n"
+        '<p class="note">Готовые подключения к серверу: чтение и запись '
+        "регистров. Адресация — как в <code>docs/HRIR_SPEC.md</code>, без "
+        "пересчёта; unit ID — 1..10. HR/CL общие для всех подключений "
+        "(shared last-write-wins).</p>\n"
+        + _example_block("Python · pymodbus", "example-python", _EXAMPLE_PYTHON)
+        + _example_block("Node.js · modbus-serial", "example-nodejs", _EXAMPLE_NODEJS)
+        + _example_block("C# · NModbus", "example-csharp", _EXAMPLE_CSHARP)
+        + '<p id="example-status" role="status"></p>\n'
+        + '<script type="module" src="/static/examples.js"></script>'
     )
 
 
