@@ -15,6 +15,7 @@ from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
 
 from app.api.routes import ServicesDep
+from app.modbus.slave10 import ZONE_COUNT, zone_offset_hours
 from app.modbus.types import AREAS, SLAVE_SPECS, AddressRange, RegisterFormat
 
 pages_router = APIRouter()
@@ -358,6 +359,56 @@ def _behaviors_body() -> str:
     )
 
 
+def _tz_cards() -> str:
+    """27 карточек зон Z=0..26 (TASK-731): смещение UTC + поля даты/времени.
+
+    Значения наполняет `static/timezones.js` из IR slave 10 (блок зоны:
+    год, месяц, день, час, минута, секунда, день недели, смещение).
+    """
+    cards = []
+    for zone in range(ZONE_COUNT):
+        offset = zone_offset_hours(zone)
+        sign = "+" if offset >= 0 else "−"
+        cards.append(
+            f'<div class="zone-card">'
+            f'<h3>Z={zone} · UTC{sign}{abs(offset):02d}:00</h3>'
+            f'<dl>'
+            f'<dt>Дата</dt><dd id="tz-{zone}-date">—</dd>'
+            f'<dt>Время</dt><dd id="tz-{zone}-time">—</dd>'
+            f'<dt>День недели</dt><dd id="tz-{zone}-weekday">—</dd>'
+            f'<dt>Смещение</dt><dd id="tz-{zone}-offset">—</dd>'
+            f"</dl></div>"
+        )
+    return '<div class="zone-grid">' + "".join(cards) + "</div>"
+
+
+def _timezones_body() -> str:
+    """Страница «Часовые пояса» (TASK-731…732): 27 зон + Unix timestamp.
+
+    Slave 10 отдаёт вычисляемые IR: блоки зон 1..268 и Unix timestamp
+    (IR 300..301, `uint32 ABCD`). Расхождение — разница серверного timestamp
+    с системным временем браузера.
+    """
+    return (
+        "<h2>Часовые пояса (slave 10)</h2>\n"
+        '<p class="note">Каждая зона Z=0..26 — блок из 8 метрик в IR slave 10 '
+        "(дата, время, день недели, смещение UTC); метрики вычисляются сервером "
+        "при чтении. Z=0..14 — UTC+00..UTC+14, Z=15..26 — UTC−01..UTC−12. "
+        "Значения живые (WS <code>/ws/state</code>).</p>\n"
+        "<h2>Unix timestamp</h2>\n"
+        "<dl>\n"
+        '  <dt>IR 300..301 (сервер)</dt><dd id="tz-unix">—</dd>\n'
+        '  <dt>Системное время</dt><dd id="tz-system">—</dd>\n'
+        '  <dt>Расхождение</dt><dd id="tz-delta">—</dd>\n'
+        "</dl>\n"
+        '<p class="note">IR 300..301 — Unix timestamp (<code>uint32 ABCD</code>, '
+        "точность ±0.5 с); расхождение — разница серверного timestamp с "
+        "системным временем вашего браузера.</p>\n"
+        + _tz_cards()
+        + '\n<script type="module" src="/static/timezones.js"></script>'
+    )
+
+
 #: Панель «Инъекции ошибок» с кнопкой сброса (TASK-605). Обычная строка (без
 #: f-префикса): фигурные скобки JS остаются литеральными.
 _INJECTIONS_PANEL = """
@@ -440,8 +491,8 @@ def get_behaviors_page() -> HTMLResponse:
 
 @pages_router.get("/timezones", response_class=HTMLResponse)
 def get_timezones() -> HTMLResponse:
-    """Часовые пояса, slave 10 (TASK-731…732) — заглушка до наполнения."""
-    return HTMLResponse(_shell("Часовые пояса", "/timezones", _stub_body("Часовые пояса")))
+    """Часовые пояса, slave 10: 27 зон + Unix timestamp (TASK-731…732)."""
+    return HTMLResponse(_shell("Часовые пояса", "/timezones", _timezones_body()))
 
 
 @pages_router.get("/injections", response_class=HTMLResponse)
