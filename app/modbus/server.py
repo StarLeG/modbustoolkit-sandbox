@@ -5,6 +5,8 @@
   (`async_getValues`/`async_setValues`, ExcCodes);
 - хук `trace_pdu` блокирует FC вне {1, 2, 3, 4, 5, 6, 16} → Illegal Function
   (инвариант 5 CLAUDE.md), включая FC, не доезжающие до контекста (7, 8, 12, 17, …);
+- `GuardedRequestHandler.handle_request` — лимиты публичного порта (ADR-006) и
+  инъекции ошибок (ADR-007): exception → ответ кодом, delay → пауза, timeout → молчание;
 - адресация 1-based: PDU address = номер регистра из `docs/HRIR_SPEC.md`;
 - unit ID вне 1..10 → NoSuchIdException → 0x0B (Gateway Target Device Failed).
 
@@ -30,6 +32,7 @@ from pymodbus.server.requesthandler import ServerRequestHandler
 
 from app.modbus.behavior import WritePolicy
 from app.modbus.config import Config
+from app.modbus.injection import Injection, InjectionRegistry, find_injection
 from app.modbus.limits import ConnectionLimiter, RateWindow
 from app.modbus.slave_map import (
     EXC_DEVICE_FAILURE,
@@ -166,13 +169,14 @@ def build_context(
 
 
 class GuardedRequestHandler(ServerRequestHandler):
-    """Хендлер соединения: лимиты публичного порта (TASK-501/502, ADR-006).
+    """Хендлер соединения: лимиты и инъекции публичного порта (ADR-006/007).
 
     Слот `ConnectionLimiter` занимается в `callback_connected` (адрес пира —
     `transport.get_extra_info("peername")`) и освобождается в
     `callback_disconnected`. Превышение `MODBUS_MAX_CONN_PER_IP` → немедленный
     close нового соединения (ADR-006 п. 2). `handle_request` лимитирует записи
-    FC 5/6/16 окном `MODBUS_MAX_WRITE_PER_SEC` (ADR-006 п. 3).
+    FC 5/6/16 окном `MODBUS_MAX_WRITE_PER_SEC` (ADR-006 п. 3) и применяет
+    инъекции ошибок из `self.server.injections` (ADR-007).
     """
 
     _peer_ip: str | None = None
@@ -197,13 +201,28 @@ class GuardedRequestHandler(ServerRequestHandler):
             self.server.conn_limiter.release(self._peer_ip)
             self._peer_ip = None
 
+    def _match_injection(self, pdu: ModbusPDU | None) -> Injection | None:
+        """Инъекция, задевающая запрос (ADR-007 п. 2); None — запрос штатный.
+
+        Запрещённые FC инъекциям не подчиняются: гейт FC (ADR-002, инвариант 5)
+        главнее, они и так отвечают Illegal Function.
+        """
+        if pdu is None or pdu.function_code not in ALLOWED_FCS:
+            return None
+        area = _FC_GET_AREA.get(pdu.function_code) or _FC_SET_AREA.get(pdu.function_code)
+        if area is None:
+            return None
+        count = pdu.count or 1  # у FC 5/6 после decode count не заполнен
+        return find_injection(self.server.injections.items(), pdu.dev_id, area, pdu.address, count)
+
     async def handle_request(self) -> None:
-        """Обработка запроса: rate-limit записей и ip для журнала (TASK-502/505).
+        """Обработка запроса: rate-limit, инъекции, ip для журнала (ADR-006/007).
 
         Превышение `MODBUS_MAX_WRITE_PER_SEC` → 0x06 (Device Busy), запись не
         применяется. В журнал такие отказы не пишутся — флуд исчерпал бы ring
-        buffer (ADR-006 п. 3), фиксируются только debug-логом. На время запроса
-        в `_PEER_IP` кладётся IP пира — для атрибуции modbus-событий журнала.
+        buffer (ADR-006 п. 3), фиксируются только debug-логом; инъекции так же
+        не журналируются (ADR-007 п. 7). На время запроса в `_PEER_IP` кладётся
+        IP пира — для атрибуции modbus-событий журнала.
         """
         pdu = self.last_pdu
         if (
@@ -217,6 +236,20 @@ class GuardedRequestHandler(ServerRequestHandler):
             response.dev_id = pdu.dev_id
             self.server_send(response, self.last_addr)  # type: ignore[no-untyped-call]
             return
+        injection = self._match_injection(pdu)
+        if pdu is not None and injection is not None and injection.kind == "exception":
+            log.debug(
+                "modbus: инъекция #%s — ответ 0x%02x вместо обработки (slave %s)",
+                injection.id,
+                injection.code or 0,
+                injection.slave,
+            )
+            assert injection.code is not None  # для exception code обязателен (ADR-007 п. 3)
+            response = ExceptionResponse(pdu.function_code, injection.code)
+            response.transaction_id = pdu.transaction_id
+            response.dev_id = pdu.dev_id
+            self.server_send(response, self.last_addr)  # type: ignore[no-untyped-call]
+            return
         token = _PEER_IP.set(self._peer_ip)
         try:
             await super().handle_request()  # type: ignore[no-untyped-call]
@@ -225,25 +258,35 @@ class GuardedRequestHandler(ServerRequestHandler):
 
 
 class LimitedTcpServer(ModbusTcpServer):
-    """TCP-сервер с лимитами публичного порта (TASK-501/502, ADR-006)."""
+    """TCP-сервер с лимитами и инъекциями публичного порта (ADR-006/007)."""
 
     def __init__(
         self,
         *args: Any,
         max_conn_per_ip: int = 20,
         max_write_per_sec: int = 200,
+        injections: InjectionRegistry | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(*args, **kwargs)
         self.conn_limiter = ConnectionLimiter(max_conn_per_ip)
         self.max_write_per_sec = max_write_per_sec
+        self.injections = injections if injections is not None else InjectionRegistry()
 
     def callback_new_connection(self) -> GuardedRequestHandler:
         return GuardedRequestHandler(self, self.trace_packet, self.trace_pdu, self.trace_connect)
 
 
-def create_server(config: Config, context: SlaveMapContext) -> ModbusTcpServer:
-    """Создать Modbus-TCP сервер (хост/порт из `Config`, ещё не слушает)."""
+def create_server(
+    config: Config,
+    context: SlaveMapContext,
+    injections: InjectionRegistry | None = None,
+) -> ModbusTcpServer:
+    """Создать Modbus-TCP сервер (хост/порт из `Config`, ещё не слушает).
+
+    `injections` — реестр инъекций ошибок (ADR-007); без него — пустой реестр
+    с TTL из `INJECTION_MAX_TTL_S` (инъекции не действуют).
+    """
     return LimitedTcpServer(
         context,
         framer=FramerType.SOCKET,
@@ -251,15 +294,24 @@ def create_server(config: Config, context: SlaveMapContext) -> ModbusTcpServer:
         trace_pdu=_guard_forbidden_fcs,
         max_conn_per_ip=config.MODBUS_MAX_CONN_PER_IP,
         max_write_per_sec=config.MODBUS_MAX_WRITE_PER_SEC,
+        injections=injections
+        if injections is not None
+        else InjectionRegistry(max_ttl_s=config.INJECTION_MAX_TTL_S),
     )
 
 
 @asynccontextmanager
 async def serve(
-    config: Config, context: SlaveMapContext | None = None
+    config: Config,
+    context: SlaveMapContext | None = None,
+    injections: InjectionRegistry | None = None,
 ) -> AsyncIterator[ModbusTcpServer]:
     """Запустить сервер на время блока, затем graceful shutdown."""
-    server = create_server(config, context if context is not None else build_context())
+    server = create_server(
+        config,
+        context if context is not None else build_context(),
+        injections,
+    )
     await server.serve_forever(background=True)
     log.info(
         "modbus-tcp listening on %s:%s",
@@ -273,7 +325,11 @@ async def serve(
         log.info("modbus-tcp stopped (graceful shutdown)")
 
 
-async def run_server(config: Config, context: SlaveMapContext | None = None) -> None:
+async def run_server(
+    config: Config,
+    context: SlaveMapContext | None = None,
+    injections: InjectionRegistry | None = None,
+) -> None:
     """Запустить сервер и работать до отмены задачи (graceful shutdown)."""
-    async with serve(config, context):
+    async with serve(config, context, injections):
         await asyncio.Event().wait()

@@ -1,19 +1,21 @@
-"""Реестр инъекций ошибок (TASK-309, ADR-004 п. 6).
+"""Реестр инъекций ошибок (TASK-309, ADR-004 п. 6) и сопоставление с запросами.
 
 Инъекции (exception / delay / timeout) регистрируются через REST и живут
 в памяти с ленивым TTL: запись считается истёкшей, когда `now >= expires_at`
 (проверяется при обращении к реестру, фоновых таймеров нет — инвариант 6).
-Влияние на Modbus-запросы реализуется в Эпике 6 (TASK-601…604) поверх этого
-реестра; сейчас он только хранит и снимает инъекции.
+Enforcement — `GuardedRequestHandler.handle_request` (ADR-007): перед
+обработкой запроса ищется подходящая инъекция (`find_injection`) и по её типу
+формируется ответ (exception), задержка (delay) или молчание (timeout).
 """
 from __future__ import annotations
 
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
-from app.modbus.types import SLAVE_SPECS, Area
+from app.modbus.behavior import touched_bindings
+from app.modbus.types import SLAVE_SPECS, Area, SlaveSpec
 
 InjectionKind = Literal["exception", "delay", "timeout"]
 
@@ -194,3 +196,48 @@ class InjectionRegistry:
     def __len__(self) -> int:
         self._purge()
         return len(self._injections)
+
+
+def _grid_step(spec: SlaveSpec, area: Area, address: int) -> int:
+    """Шаг сетки значений области: 2 для 32-битных форматов, иначе 1."""
+    rng = next((r for r in spec.area_ranges(area) if address in r), None)
+    return rng.step if rng is not None else 1
+
+
+def find_injection(
+    injections: Sequence[Injection],
+    slave: int,
+    area: Area,
+    address: int,
+    count: int,
+) -> Injection | None:
+    """Первая инъекция (в порядке добавления), задевающая окно запроса (ADR-007 п. 2).
+
+    `address`/`count` — сырое окно PDU (регистры/биты); сопоставление идёт по
+    сетке значений через `touched_bindings` (для 32-битных форматов raw N+1
+    задевает значение N). `injections` — активные инъекции (например,
+    `InjectionRegistry.items()`, уже без истёкших). Цель «весь слейв»
+    (`area=None`) совпадает с любой областью слейва.
+    """
+    spec = SLAVE_SPECS.get(slave)
+    if spec is None:
+        return None
+    touched = {binding[2] for binding in touched_bindings(slave, area, address, count)}
+    if not touched:
+        return None
+    for injection in injections:
+        if injection.slave != slave:
+            continue
+        if injection.area is None:  # весь слейв
+            return injection
+        if injection.area != area or injection.address is None:
+            continue
+        step = _grid_step(spec, injection.area, injection.address)
+        span = range(
+            injection.address,
+            injection.address + (injection.count or 1) * step,
+            step,
+        )
+        if touched.intersection(span):
+            return injection
+    return None
