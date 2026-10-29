@@ -25,7 +25,8 @@ from typing import Self
 
 from app.modbus.behavior import Behavior, BehaviorRegistry, Binding
 from app.modbus.codec import clamp_value, decode, encode
-from app.modbus.generators import ValueGenerator, create_generator
+from app.modbus.generators import ConstantGenerator, ValueGenerator, create_generator
+from app.modbus.journal import Journal, JournalEntry
 from app.modbus.slave_map import SlaveMap
 from app.modbus.types import Area
 
@@ -55,12 +56,14 @@ class BehaviorEngine:
         *,
         clock: Callable[[], float] = time.monotonic,
         rng: random.Random | None = None,
+        journal: Journal | None = None,
     ) -> None:
         self._registry = registry
         self._maps = maps
         self._tick_ms = tick_ms
         self._clock = clock
         self._rng = rng if rng is not None else random.Random()
+        self._journal = journal
         self._slots: dict[Binding, _Slot] = {}
         self._task: asyncio.Task[None] | None = None
         self._t0 = 0.0
@@ -102,15 +105,50 @@ class BehaviorEngine:
             now = self._clock() - self._t0
         self.sync(now)
         for binding, slot in self._slots.items():
-            self._apply(binding, slot, now)
+            try:
+                self._apply(binding, slot, now)
+            except Exception:  # барьер: тик не должен падать из-за одной привязки
+                log.exception("не удалось применить поведение на %s", binding)
         self.ticks += 1
 
     def _apply(self, binding: Binding, slot: _Slot, now: float) -> None:
         if slot.generator.is_static and slot.last is not None:
             return  # constant уже применён; чужие записи не перетираем
+        try:
+            value = slot.generator.update(now - slot.created_at)
+        except Exception:  # noqa: BLE001 — инвариант 7: ошибка поведения не роняет сервер
+            value = self._fallback(binding, slot)
+        self._write(binding, slot, value)
+
+    def _fallback(self, binding: Binding, slot: _Slot) -> int | float | bool:
+        """Ошибка поведения: constant 0 + лог + журнал (инвариант 7, ADR-003 п. 4)."""
+        slave, area, address = binding
+        log.exception(
+            "поведение %r на slave %s %s:%s упало → constant 0",
+            slot.config.kind,
+            slave,
+            area,
+            address,
+        )
+        if self._journal is not None:
+            self._journal.add(
+                JournalEntry(
+                    action="behavior_failed",
+                    slave=slave,
+                    area=area,
+                    address=address,
+                    source="engine",
+                )
+            )
+        fallback = Behavior("constant", {"value": 0}, locked=slot.config.locked)
+        self._registry.set(slave, area, address, fallback)
+        slot.config = fallback
+        slot.generator = ConstantGenerator(False if area in _BIT_AREAS else 0)
+        return slot.generator.update(0.0)
+
+    def _write(self, binding: Binding, slot: _Slot, value: float | bool) -> None:
         slave, area, address = binding
         smap = self._maps[slave]
-        value = slot.generator.update(now - slot.created_at)
         if area in _BIT_AREAS:
             new_bit = bool(value)
             if slot.last != new_bit:

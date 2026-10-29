@@ -8,6 +8,7 @@ import pytest
 from app.modbus.behavior import Behavior, BehaviorRegistry
 from app.modbus.codec import encode
 from app.modbus.engine import BehaviorEngine
+from app.modbus.journal import Journal
 from app.modbus.slave_map import SlaveMap
 from app.modbus.types import SLAVE_SPECS, RegisterFormat
 
@@ -124,3 +125,61 @@ async def test_async_context_manager() -> None:
         await asyncio.sleep(0.05)
     assert maps[1].get_registers("hr", 3, 1) == [5]
     assert engine.ticks >= 1
+
+
+# --- TASK-204: ошибки поведений → constant 0 (инвариант 7) -----------------------------
+
+
+class _BoomGenerator:
+    """Генератор, падающий на каждом update() — имитация ошибки поведения."""
+
+    is_static = False
+
+    def update(self, now: float) -> int:
+        raise RuntimeError("boom")
+
+
+def test_behavior_error_falls_back_to_constant_zero() -> None:
+    engine, registry, maps = _make_engine()
+    registry.set(1, "hr", 5, Behavior("constant", {"value": 5}, locked=True))
+    registry.set(1, "hr", 6, Behavior("constant", {"value": 7}))
+    engine.tick(now=0.0)
+    engine._slots[(1, "hr", 5)].generator = _BoomGenerator()  # имитация падения
+    engine.tick(now=1.0)
+    assert maps[1].get_registers("hr", 5, 1) == [0]  # constant 0 записан
+    fallback = registry.get(1, "hr", 5)
+    assert fallback is not None
+    assert fallback.kind == "constant"
+    assert fallback.params == {"value": 0}
+    assert fallback.locked is True  # locked сохраняется
+    assert maps[1].get_registers("hr", 6, 1) == [7]  # соседнее поведение живо
+
+
+def test_behavior_error_on_bit_falls_back_to_false() -> None:
+    journal = Journal()
+    registry = BehaviorRegistry()
+    maps: MapSet = {slave_id: SlaveMap(slave_id) for slave_id in SLAVE_SPECS}
+    engine = BehaviorEngine(registry, maps, journal=journal)
+    registry.set(1, "cl", 2, Behavior("constant", {"value": 1}))
+    engine.tick(now=0.0)
+    engine._slots[(1, "cl", 2)].generator = _BoomGenerator()
+    engine.tick(now=1.0)
+    assert maps[1].get_bits("cl", 2, 1) == [False]
+    entry = journal.entries()[0]
+    assert entry.action == "behavior_failed"
+    assert (entry.slave, entry.area, entry.address) == (1, "cl", 2)
+    assert entry.source == "engine"
+
+
+def test_tick_barrier_survives_write_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Исключение в пути записи не роняет тик-цикл (барьер в tick())."""
+    engine, registry, maps = _make_engine()
+    registry.set(1, "hr", 5, Behavior("constant", {"value": 5}))
+
+    def broken(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("write failed")
+
+    monkeypatch.setattr(maps[1], "set_registers", broken)
+    engine.tick(now=0.0)
+    engine.tick(now=1.0)
+    assert engine.ticks == 2
