@@ -503,6 +503,33 @@ class RandomBitGenerator:
         return self._rng.random() < self._p
 
 
+class CounterBitsGenerator:
+    """`counter_bits`: бит `bit` целочисленного счётчика секунд `(int(now) >> bit) & 1`.
+
+    По умолчанию `bit = address - 1`: бит N меняется раз в 2^N секунд.
+    """
+
+    is_static = False
+
+    def __init__(
+        self,
+        params: dict[str, Any],
+        binding: Binding,
+        ctx: GeneratorContext,
+        rng: random.Random,
+    ) -> None:
+        _ = ctx, rng
+        raw = params.get("bit", binding[2] - 1)
+        if isinstance(raw, bool) or not isinstance(raw, int):
+            raise TypeError(f"counter_bits: bit должен быть целым, получено: {raw!r}")
+        if raw < 0:
+            raise ValueError(f"counter_bits: bit должен быть >= 0, получено: {raw!r}")
+        self._bit = raw
+
+    def update(self, now: float) -> bool:
+        return bool((int(now) >> self._bit) & 1)
+
+
 def create_generator(
     behavior: Behavior,
     binding: Binding,
@@ -547,4 +574,6 @@ def create_generator(
         return PwmGenerator(params, binding, ctx, rng)
     if behavior.kind == "random_bit":
         return RandomBitGenerator(params, binding, ctx, rng)
+    if behavior.kind == "counter_bits":
+        return CounterBitsGenerator(params, binding, ctx, rng)
     raise ValueError(f"поведение {behavior.kind!r} ещё не реализовано")

@@ -530,3 +530,32 @@ def test_random_bit_validation() -> None:
         _gen("random_bit", {"p": 1.5}, area="cl")
     with pytest.raises(ValueError, match="p"):
         _gen("random_bit", {"p": -0.5}, area="cl")
+
+
+# --- TASK-235: counter_bits (bool) ------------------------------------------------------
+
+
+def test_counter_bits_default_bit_from_address() -> None:
+    gen = _gen("counter_bits", address=1, area="di")  # bit = address - 1 = 0
+    assert gen.update(0.0) is False
+    assert gen.update(0.9) is False  # int(0.9) = 0
+    assert gen.update(1.0) is True  # 1 >> 0 & 1 = 1
+    assert gen.update(2.0) is False  # 2 >> 0 & 1 = 0
+    assert gen.update(3.0) is True
+
+
+def test_counter_bits_explicit_bit() -> None:
+    gen = _gen("counter_bits", {"bit": 2}, address=1, area="cl")
+    assert gen.update(3.0) is False  # 3 >> 2 & 1 = 0
+    assert gen.update(4.0) is True  # 4 >> 2 & 1 = 1
+    assert gen.update(5.0) is True  # 5 >> 2 & 1 = 1
+    assert gen.update(8.0) is False  # 8 >> 2 & 1 = 0
+
+
+def test_counter_bits_validation() -> None:
+    with pytest.raises(ValueError, match="bit"):
+        _gen("counter_bits", {"bit": -1}, area="cl")
+    with pytest.raises(TypeError, match="bit"):
+        _gen("counter_bits", {"bit": 1.5}, area="cl")
+    with pytest.raises(TypeError, match="bit"):
+        _gen("counter_bits", {"bit": True}, area="cl")
