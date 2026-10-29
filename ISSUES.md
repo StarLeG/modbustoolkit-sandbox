@@ -81,7 +81,7 @@
 ### 2.3 Дискретные поведения
 - [x] [P0] **TASK-231 · constant (bool)**
 - [x] [P0] **TASK-232 · toggle** (`period_s`)
-- [ ] [P1] **TASK-233 · pwm** (`period_s, duty`)
+- [x] [P1] **TASK-233 · pwm** (`period_s, duty`)
 - [ ] [P1] **TASK-234 · random_bit** (вероятность)
 - [ ] [P0] **TASK-235 · counter_bits** (счётчик секунд → биты)
 - [ ] [P2] **TASK-236 · follow_bit** (`source, bit`)

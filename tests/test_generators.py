@@ -478,3 +478,29 @@ def test_toggle_flips_every_half_period() -> None:
 def test_toggle_validation() -> None:
     with pytest.raises(ValueError, match="period_s"):
         _gen("toggle", {"period_s": 0}, area="di")
+
+
+# --- TASK-233: pwm (bool) --------------------------------------------------------------
+
+
+def test_pwm_duty_quarter() -> None:
+    gen = _gen("pwm", {"period_s": 4, "duty": 0.25}, area="cl")
+    assert gen.update(0.0) is True
+    assert gen.update(0.9) is True
+    assert gen.update(1.0) is False
+    assert gen.update(3.9) is False
+    assert gen.update(4.0) is True  # новый период
+
+
+def test_pwm_duty_extremes() -> None:
+    assert _gen("pwm", {"duty": 0}, area="di").update(0.5) is False
+    assert _gen("pwm", {"duty": 1}, area="di").update(0.5) is True
+
+
+def test_pwm_validation() -> None:
+    with pytest.raises(ValueError, match="duty"):
+        _gen("pwm", {"duty": 1.5}, area="cl")
+    with pytest.raises(ValueError, match="duty"):
+        _gen("pwm", {"duty": -0.1}, area="cl")
+    with pytest.raises(ValueError, match="period_s"):
+        _gen("pwm", {"period_s": -1}, area="cl")

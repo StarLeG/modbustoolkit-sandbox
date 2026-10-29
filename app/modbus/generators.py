@@ -458,6 +458,28 @@ class ToggleGenerator:
         return (now / self._period) % 1.0 < 0.5
 
 
+class PwmGenerator:
+    """`pwm`: True в первые `duty` доли периода, иначе False (скважность бита)."""
+
+    is_static = False
+
+    def __init__(
+        self,
+        params: dict[str, Any],
+        binding: Binding,
+        ctx: GeneratorContext,
+        rng: random.Random,
+    ) -> None:
+        _ = binding, ctx, rng
+        self._period = _positive(params, "period_s", 1.0)
+        self._duty = _num(params, "duty", 0.5)
+        if not 0 <= self._duty <= 1:
+            raise ValueError(f"pwm: duty должен быть в 0..1, получено: {self._duty!r}")
+
+    def update(self, now: float) -> bool:
+        return (now / self._period) % 1.0 < self._duty
+
+
 def create_generator(
     behavior: Behavior,
     binding: Binding,
@@ -498,4 +520,6 @@ def create_generator(
         return FollowGenerator(params, binding, ctx, rng)
     if behavior.kind == "toggle":
         return ToggleGenerator(params, binding, ctx, rng)
+    if behavior.kind == "pwm":
+        return PwmGenerator(params, binding, ctx, rng)
     raise ValueError(f"поведение {behavior.kind!r} ещё не реализовано")
