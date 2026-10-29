@@ -79,7 +79,7 @@
 - [x] [P2] **TASK-222 · follow** (`source: "hr:15"` — копия другого регистра)
 
 ### 2.3 Дискретные поведения
-- [ ] [P0] **TASK-231 · constant (bool)**
+- [x] [P0] **TASK-231 · constant (bool)**
 - [ ] [P0] **TASK-232 · toggle** (`period_s`)
 - [ ] [P1] **TASK-233 · pwm** (`period_s, duty`)
 - [ ] [P1] **TASK-234 · random_bit** (вероятность)
