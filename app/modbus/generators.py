@@ -480,6 +480,29 @@ class PwmGenerator:
         return (now / self._period) % 1.0 < self._duty
 
 
+class RandomBitGenerator:
+    """`random_bit`: True с вероятностью `p` на каждом update."""
+
+    is_static = False
+
+    def __init__(
+        self,
+        params: dict[str, Any],
+        binding: Binding,
+        ctx: GeneratorContext,
+        rng: random.Random,
+    ) -> None:
+        _ = binding, ctx
+        self._rng = rng
+        self._p = _num(params, "p", 0.5)
+        if not 0 <= self._p <= 1:
+            raise ValueError(f"random_bit: p должен быть в 0..1, получено: {self._p!r}")
+
+    def update(self, now: float) -> bool:
+        _ = now
+        return self._rng.random() < self._p
+
+
 def create_generator(
     behavior: Behavior,
     binding: Binding,
@@ -522,4 +545,6 @@ def create_generator(
         return ToggleGenerator(params, binding, ctx, rng)
     if behavior.kind == "pwm":
         return PwmGenerator(params, binding, ctx, rng)
+    if behavior.kind == "random_bit":
+        return RandomBitGenerator(params, binding, ctx, rng)
     raise ValueError(f"поведение {behavior.kind!r} ещё не реализовано")

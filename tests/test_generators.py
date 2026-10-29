@@ -504,3 +504,29 @@ def test_pwm_validation() -> None:
         _gen("pwm", {"duty": -0.1}, area="cl")
     with pytest.raises(ValueError, match="period_s"):
         _gen("pwm", {"period_s": -1}, area="cl")
+
+
+# --- TASK-234: random_bit (bool) --------------------------------------------------------
+
+
+def test_random_bit_extremes() -> None:
+    never = _gen("random_bit", {"p": 0}, area="cl", seed=5)
+    always = _gen("random_bit", {"p": 1}, area="di", seed=5)
+    assert all(never.update(0.0) is False for _ in range(10))
+    assert all(always.update(0.0) is True for _ in range(10))
+
+
+def test_random_bit_deterministic_with_seed() -> None:
+    gen_a = _gen("random_bit", {"p": 0.5}, area="cl", seed=1)
+    gen_b = _gen("random_bit", {"p": 0.5}, area="cl", seed=1)
+    seq_a = [gen_a.update(0.0) for _ in range(20)]
+    seq_b = [gen_b.update(0.0) for _ in range(20)]
+    assert seq_a == seq_b
+    assert any(seq_a) and not all(seq_a)  # оба значения встречаются
+
+
+def test_random_bit_validation() -> None:
+    with pytest.raises(ValueError, match="p"):
+        _gen("random_bit", {"p": 1.5}, area="cl")
+    with pytest.raises(ValueError, match="p"):
+        _gen("random_bit", {"p": -0.5}, area="cl")
