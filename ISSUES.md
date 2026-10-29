@@ -97,7 +97,7 @@
 
 ## Эпик 3 · REST API управлений
 
-- [ ] [P0] **TASK-301 · `GET /api/modbus/behaviors`** — полный конфиг
+- [x] [P0] **TASK-301 · `GET /api/modbus/behaviors`** — полный конфиг
 - [ ] [P0] **TASK-302 · `PUT /api/modbus/behaviors/{slave}/{area}/{address}`**
 - [ ] [P0] **TASK-303 · `POST /api/modbus/behaviors/batch`**
 - [ ] [P0] **TASK-304 · `POST /api/modbus/behaviors/reset`** (`all` / `{slave}`)
