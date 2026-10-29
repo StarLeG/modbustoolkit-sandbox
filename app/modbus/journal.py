@@ -2,15 +2,20 @@
 
 Фиксируются отклонённые записи в locked-поведения (0x04), далее — смена
 поведений, инъекции, UI-записи. Хранение — только в памяти (инвариант 9).
+Подписка на новые записи (`subscribe`) — зеркало для `/ws/events` (TASK-404).
 """
 from __future__ import annotations
 
+import logging
 import time
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
 from app.modbus.types import Area
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -40,10 +45,31 @@ class Journal:
         if size <= 0:
             raise ValueError(f"размер журнала должен быть > 0, получено: {size}")
         self._entries: deque[JournalEntry] = deque(maxlen=size)
+        self._listeners: list[Callable[[JournalEntry], None]] = []
+
+    def subscribe(self, listener: Callable[[JournalEntry], None]) -> Callable[[], None]:
+        """Подписаться на новые записи; возвращает функцию отписки (TASK-404).
+
+        Ошибка слушателя не прерывает `add` (инвариант 7) — только лог.
+        """
+        self._listeners.append(listener)
+
+        def _unsubscribe() -> None:
+            try:
+                self._listeners.remove(listener)
+            except ValueError:
+                pass
+
+        return _unsubscribe
 
     def add(self, entry: JournalEntry) -> None:
-        """Добавить запись; при переполнении самая старая вытесняется."""
+        """Добавить запись и уведомить слушателей; при переполнении старая вытесняется."""
         self._entries.append(entry)
+        for listener in tuple(self._listeners):
+            try:
+                listener(entry)
+            except Exception:
+                logger.exception("journal: слушатель завершился ошибкой")
 
     def entries(self, limit: int | None = None) -> list[JournalEntry]:
         """Записи от старых к новым; `limit` — максимум последних записей."""

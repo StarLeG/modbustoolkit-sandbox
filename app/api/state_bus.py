@@ -17,6 +17,7 @@ from typing import Any, Literal
 from starlette.websockets import WebSocket
 
 from app.api.state_view import state_payload
+from app.modbus.journal import JournalEntry
 from app.modbus.slave_map import SlaveMap
 from app.modbus.types import AREAS, SLAVE_SPECS, Area
 
@@ -115,6 +116,7 @@ class WebStateBus:
         self._send_timeout_s = send_timeout_s
         self._clients: list[WsClient] = []
         self._ticker: asyncio.Task[None] | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
 
     @property
     def clients(self) -> tuple[WsClient, ...]:
@@ -125,6 +127,7 @@ class WebStateBus:
 
     def add_client(self, ws: WebSocket, kind: Literal["state", "events"]) -> WsClient:
         """Зарегистрировать клиента и запустить его задачу отправки."""
+        self._loop = asyncio.get_running_loop()
         client = WsClient(ws=ws, kind=kind, queue=asyncio.Queue(maxsize=self._queue_size))
         client.sender = asyncio.create_task(self._sender(client))
         self._clients.append(client)
@@ -154,6 +157,37 @@ class WebStateBus:
         self._enqueue_state(client)
 
     # --- продюсеры ---
+
+    def publish_entry(self, entry: JournalEntry) -> None:
+        """Событие журнала → кадр `/ws/events` всем events-клиентам (TASK-404).
+
+        `journal.add` зовёт слушателей из любого потока (sync REST-хендлеры
+        работают в threadpool), поэтому кадр передаётся в event loop через
+        `call_soon_threadsafe` — очередь клиента трогается только из loop.
+        """
+        frame = {
+            "type": "event",
+            "action": entry.action,
+            "slave": entry.slave,
+            "area": entry.area,
+            "address": entry.address,
+            "value": entry.value,
+            "source": entry.source,
+            "ip": entry.ip,
+            "timestamp": entry.timestamp,
+        }
+        loop = self._loop
+        if loop is None:  # клиентов ещё не было — слушать некому
+            return
+        try:
+            loop.call_soon_threadsafe(self._offer_events, frame)
+        except RuntimeError:  # loop уже остановлен — поздние события не шлём
+            logger.debug("ws: событие после остановки loop пропущено")
+
+    def _offer_events(self, frame: dict[str, Any]) -> None:
+        for client in tuple(self._clients):
+            if client.kind == "events":
+                self._offer(client, frame)
 
     def _enqueue_state(self, client: WsClient) -> None:
         if client.subscription is None or client.dropped:

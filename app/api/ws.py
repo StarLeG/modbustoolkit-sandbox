@@ -50,3 +50,25 @@ async def ws_state(ws: WebSocket) -> None:
         pass
     finally:
         bus.remove_client(client)
+
+
+@ws_router.websocket("/ws/events")
+async def ws_events(ws: WebSocket) -> None:
+    """Канал событий журнала (TASK-404).
+
+    Зеркало `GET /api/modbus/journal`: каждая запись журнала (записи, смена
+    поведений, инъекции, отказы locked) уходит кадром
+    `{"type": "event", "action", "slave", "area", "address", "value",
+    "source", "ip", "timestamp"}` сразу при добавлении. Подписка не нужна,
+    входящие сообщения клиента игнорируются.
+    """
+    bus = _bus(ws)
+    await ws.accept()
+    client = bus.add_client(ws, kind="events")
+    try:
+        while True:
+            message = await ws.receive()
+            if message["type"] == "websocket.disconnect":
+                break
+    finally:
+        bus.remove_client(client)
