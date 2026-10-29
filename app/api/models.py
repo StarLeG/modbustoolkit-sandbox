@@ -193,7 +193,11 @@ class InjectionIn(BaseModel):
 
 
 class InjectionOut(BaseModel):
-    """Активная инъекция: id, цель, параметры и срок жизни (TASK-309)."""
+    """Активная инъекция: id, цель, параметры и срок жизни (TASK-309).
+
+    `remaining_s` — остаток TTL на момент ответа (TASK-743): `created_at`/
+    `expires_at` — монотонические часы реестра, браузеру они бесполезны.
+    """
 
     id: int
     kind: InjectionKind
@@ -206,6 +210,18 @@ class InjectionOut(BaseModel):
     ttl_s: float
     created_at: float
     expires_at: float
+    remaining_s: float
+
+
+class InjectionsResponse(BaseModel):
+    """Активные инъекции ошибок (TASK-743).
+
+    `items` — в порядке добавления (без истёкших); `max_ttl_s` — предел
+    `INJECTION_MAX_TTL_S` для формы UI.
+    """
+
+    items: list[InjectionOut]
+    max_ttl_s: float
 
 
 class InjectClearIn(BaseModel):

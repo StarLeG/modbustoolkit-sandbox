@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+import time
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
@@ -23,6 +24,7 @@ from app.api.models import (
     InjectClearResponse,
     InjectionIn,
     InjectionOut,
+    InjectionsResponse,
     JournalEntryOut,
     JournalResponse,
     MetricsResponse,
@@ -94,6 +96,8 @@ def _injection_out(injection: Injection) -> InjectionOut:
         ttl_s=injection.ttl_s,
         created_at=injection.created_at,
         expires_at=injection.expires_at,
+        # Часы реестра — time.monotonic (по умолчанию); остаток TTL для UI.
+        remaining_s=max(0.0, injection.expires_at - time.monotonic()),
     )
 
 
@@ -481,6 +485,19 @@ def get_journal(
             for entry in entries
         ],
         total=len(services.journal),
+    )
+
+
+@router.get("/inject", response_model=InjectionsResponse)
+def get_inject(services: ServicesDep) -> InjectionsResponse:
+    """Активные инъекции ошибок (TASK-743).
+
+    Порядок — как добавлялись; истёкшие не возвращаются (ленивый TTL реестра).
+    Быстрый read-only: без журнала и лимитов. `max_ttl_s` — предел TTL для UI.
+    """
+    return InjectionsResponse(
+        items=[_injection_out(injection) for injection in services.injections.items()],
+        max_ttl_s=services.injections.max_ttl_s,
     )
 
 

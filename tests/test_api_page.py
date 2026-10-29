@@ -176,16 +176,16 @@ def test_watchlist_js_publishes_values() -> None:
 
 
 def test_injections_page_has_clear_button() -> None:
-    """Кнопка «Сбросить инъекции» → REST /inject/clear (TASK-605).
+    """Кнопка «Сбросить инъекции» → REST /inject/clear (TASK-605, TASK-743).
 
-    С ADR-008 кнопка живёт на странице «Инъекции» (на «Обзоре» — только ссылка
-    на раздел через навигацию).
+    Кнопка живёт на странице «Инъекции»; вызов REST — в модуле
+    `static/injections.js` (ADR-008).
     """
     with _client() as client:
-        response = client.get("/injections")
-    html = response.text
-    assert "Сбросить инъекции" in html
-    assert "/api/modbus/inject/clear" in html
+        page = client.get("/injections").text
+        js = client.get("/static/injections.js").text
+    assert "Сбросить инъекции" in page
+    assert "/api/modbus/inject/clear" in js
 
 
 def test_index_has_ping_panel() -> None:

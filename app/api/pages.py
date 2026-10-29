@@ -489,34 +489,69 @@ def _timezones_body() -> str:
     )
 
 
-#: Панель «Инъекции ошибок» с кнопкой сброса (TASK-605). Обычная строка (без
-#: f-префикса): фигурные скобки JS остаются литеральными.
-_INJECTIONS_PANEL = """
-<p>Инъекции (exception / delay / timeout) регистрируются через REST
-<code>POST /api/modbus/inject</code> и действуют не дольше
-<code>INJECTION_MAX_TTL_S</code>. Кнопка снимает все активные инъекции:</p>
-<p><button id="clear-injections" type="button">Сбросить инъекции</button></p>
-<p id="clear-result" role="status"></p>
-<script>
-document.getElementById("clear-injections").addEventListener("click", async function () {
-  var result = document.getElementById("clear-result");
-  result.textContent = "Снятие…";
-  try {
-    var response = await fetch("/api/modbus/inject/clear", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: "{}"
-    });
-    var body = await response.json();
-    result.textContent = response.ok
-      ? "Снято инъекций: " + body.cleared
-      : "Ошибка " + response.status;
-  } catch (error) {
-    result.textContent = "Ошибка: " + error;
-  }
-});
-</script>
-"""
+def _injections_body() -> str:
+    """Страница «Инъекции ошибок» (TASK-743): форма добавления и список активных.
+
+    Типы exception / delay / timeout; цель — весь слейв или диапазон адресов
+    по сетке значений. Список наполняет `static/injections.js`
+    (REST `GET/POST /api/modbus/inject`, снятие — `POST …/inject/clear`).
+    """
+    slave_options = "".join(f"<option>{slave_id}</option>" for slave_id in SLAVE_SPECS)
+    return (
+        "<h2>Инъекции ошибок</h2>\n"
+        '<p class="note">Инъекции (<code>exception</code> / <code>delay</code> / '
+        "<code>timeout</code>) влияют на Modbus-запросы выбранного слейва или "
+        "диапазона адресов и действуют не дольше <code>INJECTION_MAX_TTL_S</code>. "
+        "Инъекции общие для всех пользователей сервера. REST: "
+        "<code>POST /api/modbus/inject</code>, снятие — "
+        "<code>POST /api/modbus/inject/clear</code>.</p>\n"
+        "<h3>Добавить инъекцию</h3>\n"
+        "<p>\n"
+        '  <label>Тип <select id="inj-kind">\n'
+        '    <option value="exception">exception — ответ кодом ошибки</option>\n'
+        '    <option value="delay">delay — задержка ответа</option>\n'
+        '    <option value="timeout">timeout — не отвечать</option>\n'
+        "  </select></label>\n"
+        f'  <label>Unit ID <select id="inj-slave">{slave_options}</select></label>\n'
+        '  <label>Цель <select id="inj-scope">\n'
+        '    <option value="slave">весь слейв</option>\n'
+        '    <option value="range">диапазон адресов</option>\n'
+        "  </select></label>\n"
+        "</p>\n"
+        "<p>\n"
+        '  <label>Область <select id="inj-area">\n'
+        '    <option value="hr">hr — Holding Registers</option>\n'
+        '    <option value="ir">ir — Input Registers</option>\n'
+        '    <option value="cl">cl — Coils</option>\n'
+        '    <option value="di">di — Discrete Inputs</option>\n'
+        "  </select></label>\n"
+        '  <label>Адрес <input id="inj-address" type="text" value="1"></label>\n'
+        '  <label>Значений <input id="inj-count" type="text" value="1"></label>\n'
+        "</p>\n"
+        "<p>\n"
+        '  <label>Код ошибки <select id="inj-code">\n'
+        '    <option value="1">0x01 Illegal Function</option>\n'
+        '    <option value="2">0x02 Illegal Data Address</option>\n'
+        '    <option value="3">0x03 Illegal Data Value</option>\n'
+        '    <option value="4">0x04 Server Device Failure</option>\n'
+        '    <option value="6">0x06 Server Device Busy</option>\n'
+        "  </select></label>\n"
+        '  <label>Задержка, мс <input id="inj-delay" type="text" value="500"></label>\n'
+        '  <label>TTL, с <input id="inj-ttl" type="text" placeholder="максимум"></label>\n'
+        "</p>\n"
+        "<p>\n"
+        '  <button id="inj-add" type="button">Добавить инъекцию</button>\n'
+        '  <button id="inj-clear-all" type="button">Сбросить инъекции</button>\n'
+        '  <span id="inj-status" role="status"></span>\n'
+        "</p>\n"
+        "<h3>Активные инъекции</h3>\n"
+        '<table class="values">\n'
+        "  <thead><tr><th>ID</th><th>Тип</th><th>Unit ID</th><th>Цель</th>"
+        "<th>Параметры</th><th>TTL, с</th><th>Осталось, с</th><th></th></tr></thead>\n"
+        '  <tbody id="inj-rows"></tbody>\n'
+        "</table>\n"
+        '<script type="module" src="/static/injections.js"></script>'
+    )
 
 
 def _shell(title: str, active: str, body: str) -> str:
@@ -577,9 +612,8 @@ def get_timezones() -> HTMLResponse:
 
 @pages_router.get("/injections", response_class=HTMLResponse)
 def get_injections_page() -> HTMLResponse:
-    """Инъекции ошибок: кнопка сброса (TASK-605); полная страница — TASK-743."""
-    body = f"<h2>Инъекции ошибок</h2>{_INJECTIONS_PANEL}"
-    return HTMLResponse(_shell("Инъекции", "/injections", body))
+    """Инъекции ошибок: форма добавления и список активных (TASK-605, TASK-743)."""
+    return HTMLResponse(_shell("Инъекции", "/injections", _injections_body()))
 
 
 @pages_router.get("/tools", response_class=HTMLResponse)
