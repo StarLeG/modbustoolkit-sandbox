@@ -287,3 +287,30 @@ async def test_timeout_connection_keeps_working_after_clear(config: Config) -> N
         finally:
             writer.close()
             await writer.wait_closed()
+
+
+# --- TASK-604: TTL и автосброс ---------------------------------------------------------
+
+
+async def test_ttl_autorestore_after_expiry(config: Config) -> None:
+    """Истёкшая инъекция перестаёт действовать сама (TASK-604, ADR-007 п. 6)."""
+    injections = InjectionRegistry(max_ttl_s=0.4)  # роль INJECTION_MAX_TTL_S
+    injections.add("exception", 1, code=0x02)  # без ttl_s — до максимума
+    async with _serving(config, injections) as (client, _maps):
+        response = await client.read_holding_registers(5, count=1, device_id=1)
+        assert response.isError() and response.exception_code == 0x02
+        await asyncio.sleep(0.5)
+        assert injections.items() == []  # ленивый TTL выбросил инъекцию
+        response = await client.read_holding_registers(5, count=1, device_id=1)
+        assert not response.isError()
+
+
+async def test_ttl_timeout_responds_after_expiry(config: Config) -> None:
+    """Молчание timeout длится ровно ttl_s: после истечения сервер отвечает."""
+    injections = InjectionRegistry()
+    injections.add("timeout", 1, ttl_s=0.4)
+    async with _serving(config, injections) as (_client, _maps):
+        assert await _raw_request(config, _read_frame(1, 5, 1)) is None
+        await asyncio.sleep(0.5)
+        data = await _raw_request(config, _read_frame(1, 5, 1), timeout=1.0)
+        assert data is not None

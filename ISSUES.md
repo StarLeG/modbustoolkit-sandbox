@@ -135,7 +135,7 @@
 - [x] [P1] **TASK-601 · Exception injection** по коду (0x01/0x02/0x03/0x04/0x06) на slave/диапазон
 - [x] [P1] **TASK-602 · Delay injection** (0..5000 мс)
 - [x] [P1] **TASK-603 · Timeout injection** (не отвечать N секунд)
-- [ ] [P1] **TASK-604 · TTL инъекции** (`INJECTION_MAX_TTL_S`), автосброс
+- [x] [P1] **TASK-604 · TTL инъекции** (`INJECTION_MAX_TTL_S`), автосброс
 - [ ] [P1] **TASK-605 · Кнопка «сбросить инъекции»** в UI + REST
 - [ ] [P1] **TASK-606 · Тест: каждый код возвращается как ожидается**
 
