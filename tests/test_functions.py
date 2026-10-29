@@ -146,3 +146,30 @@ async def test_fc5_slave10_absent(client: AsyncModbusTcpClient) -> None:
     response = await client.write_coil(1, True, device_id=10)
     assert response.isError()
     assert response.exception_code == 0x02
+
+
+# --- TASK-114: FC 6 — запись одного holding register (HR) ------------------------------
+
+
+async def test_fc6_write_single_register(client: AsyncModbusTcpClient) -> None:
+    response = await client.write_register(10, 0xBEEF, device_id=3)
+    assert not response.isError()
+    # Echo-ответ FC 6 содержит записанное значение.
+    assert response.registers == [0xBEEF]
+    back = await client.read_holding_registers(10, count=1, device_id=3)
+    assert back.registers == [0xBEEF]
+
+
+async def test_fc6_on_slaves_1_to_9(client: AsyncModbusTcpClient) -> None:
+    for device_id in range(1, 10):
+        value = device_id * 0x1001
+        response = await client.write_register(1, value, device_id=device_id)
+        assert not response.isError(), f"slave {device_id}"
+        back = await client.read_holding_registers(1, count=1, device_id=device_id)
+        assert back.registers == [value], f"slave {device_id}"
+
+
+async def test_fc6_slave10_absent(client: AsyncModbusTcpClient) -> None:
+    response = await client.write_register(1, 2024, device_id=10)
+    assert response.isError()
+    assert response.exception_code == 0x02
