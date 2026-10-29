@@ -1,0 +1,88 @@
+/* Базовые стили UI (Эпик 7, ADR-008): shell, плашка, таблицы. */
+body {
+  font-family: system-ui, sans-serif;
+  margin: 2rem auto;
+  max-width: 60rem;
+  padding: 0 1rem;
+  line-height: 1.5;
+  color: #1a1a1a;
+}
+
+header h1 {
+  font-size: 1.5rem;
+  margin-bottom: 0;
+}
+
+.subtitle {
+  color: #666;
+  margin-top: 0.25rem;
+}
+
+nav {
+  margin: 1rem 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+}
+
+nav a {
+  text-decoration: none;
+  color: #1d4ed8;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+}
+
+nav a.active {
+  background: #1d4ed8;
+  color: #fff;
+}
+
+.banner {
+  border: 2px solid #b45309;
+  background: #fef3c7;
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin: 1.5rem 0;
+}
+
+.banner strong {
+  color: #92400e;
+}
+
+dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 1rem;
+}
+
+dt {
+  font-weight: 600;
+}
+
+code {
+  background: #f3f4f6;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+}
+
+table.formats {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1rem 0;
+}
+
+table.formats th,
+table.formats td {
+  border: 1px solid #d1d5db;
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+}
+
+table.formats th {
+  background: #f3f4f6;
+}
+
+.note {
+  color: #555;
+  font-size: 0.95rem;
+}
