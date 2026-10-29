@@ -6,7 +6,7 @@
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Literal
 
@@ -70,6 +70,22 @@ class SlaveSpec:
     ir: tuple[AddressRange, ...]
     cl: tuple[AddressRange, ...]
     di: tuple[AddressRange, ...]
+    #: Кэш register_ranges (вычисляется один раз: спека неизменяема).
+    _reg_ranges: dict[Area, tuple[AddressRange, ...]] = field(
+        init=False, repr=False, compare=False
+    )
+
+    def __post_init__(self) -> None:
+        span = self.fmt.registers_per_value - 1
+        computed: dict[Area, tuple[AddressRange, ...]] = {}
+        for area in AREAS:
+            ranges = self.area_ranges(area)
+            computed[area] = (
+                ranges
+                if area in ("cl", "di")
+                else tuple(AddressRange(r.start, r.stop + span) for r in ranges)
+            )
+        object.__setattr__(self, "_reg_ranges", computed)
 
     def area_ranges(self, area: Area) -> tuple[AddressRange, ...]:
         mapping: dict[Area, tuple[AddressRange, ...]] = {
@@ -91,10 +107,7 @@ class SlaveSpec:
         на registers_per_value - 1 шире. Для cl/di (биты) и slave 10 (UINT16,
         диапазоны заданы сразу в регистрах) совпадает с сеткой значений.
         """
-        if area in ("cl", "di"):
-            return self.area_ranges(area)
-        span = self.fmt.registers_per_value - 1
-        return tuple(AddressRange(r.start, r.stop + span) for r in self.area_ranges(area))
+        return self._reg_ranges[area]
 
 
 _REG16 = AddressRange(1, 1024)  # slave 1: HR/IR 1..1024
