@@ -17,6 +17,7 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
+from typing import Any
 
 from pymodbus.constants import ExcCodes
 from pymodbus.datastore import ModbusServerContext
@@ -24,9 +25,11 @@ from pymodbus.exceptions import NoSuchIdException
 from pymodbus.framer import FramerType
 from pymodbus.pdu import ExceptionResponse, ModbusPDU
 from pymodbus.server import ModbusTcpServer
+from pymodbus.server.requesthandler import ServerRequestHandler
 
 from app.modbus.behavior import WritePolicy
 from app.modbus.config import Config
+from app.modbus.limits import ConnectionLimiter
 from app.modbus.slave_map import (
     EXC_DEVICE_FAILURE,
     EXC_ILLEGAL_ADDRESS,
@@ -157,13 +160,56 @@ def build_context(
     return SlaveMapContext(maps, write_policy)
 
 
+class GuardedRequestHandler(ServerRequestHandler):
+    """Хендлер соединения: учёт одновременных соединений по IP (TASK-501).
+
+    Слот `ConnectionLimiter` занимается в `callback_connected` (адрес пира —
+    `transport.get_extra_info("peername")`) и освобождается в
+    `callback_disconnected`. Превышение `MODBUS_MAX_CONN_PER_IP` → немедленный
+    close нового соединения (ADR-006 п. 2).
+    """
+
+    _peer_ip: str | None = None
+
+    def __init__(self, owner: Any, trace_packet: Any, trace_pdu: Any, trace_connect: Any) -> None:
+        super().__init__(owner, trace_packet, trace_pdu, trace_connect)  # type: ignore[no-untyped-call]
+
+    def callback_connected(self) -> None:
+        super().callback_connected()
+        peer = self.transport.get_extra_info("peername") if self.transport else None
+        ip = str(peer[0]) if peer else ""
+        if not self.server.conn_limiter.allow(ip):
+            log.info("modbus: соединение с %s отклонено (лимит соединений на IP)", ip)
+            self.close()
+            return
+        self._peer_ip = ip
+
+    def callback_disconnected(self, exc: Exception | None) -> None:
+        super().callback_disconnected(exc)
+        if self._peer_ip is not None:
+            self.server.conn_limiter.release(self._peer_ip)
+            self._peer_ip = None
+
+
+class LimitedTcpServer(ModbusTcpServer):
+    """TCP-сервер с лимитами публичного порта (TASK-501/502, ADR-006)."""
+
+    def __init__(self, *args: Any, max_conn_per_ip: int = 20, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.conn_limiter = ConnectionLimiter(max_conn_per_ip)
+
+    def callback_new_connection(self) -> GuardedRequestHandler:
+        return GuardedRequestHandler(self, self.trace_packet, self.trace_pdu, self.trace_connect)
+
+
 def create_server(config: Config, context: SlaveMapContext) -> ModbusTcpServer:
     """Создать Modbus-TCP сервер (хост/порт из `Config`, ещё не слушает)."""
-    return ModbusTcpServer(
+    return LimitedTcpServer(
         context,
         framer=FramerType.SOCKET,
         address=(config.MODBUS_TCP_HOST, config.MODBUS_TCP_PORT),
         trace_pdu=_guard_forbidden_fcs,
+        max_conn_per_ip=config.MODBUS_MAX_CONN_PER_IP,
     )
 
 
