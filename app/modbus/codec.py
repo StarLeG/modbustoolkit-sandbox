@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import math
 import struct
 from collections.abc import Sequence
 
@@ -90,3 +91,18 @@ def decode(regs: Sequence[int], fmt: RegisterFormat) -> int | float:
     if fmt.is_float:
         return float(struct.unpack(">f", raw)[0])
     return int.from_bytes(raw, "big")
+
+
+def clamp_value(value: float, fmt: RegisterFormat) -> int | float:
+    """Привести значение к формату регистра (ADR-003, TASK-241).
+
+    uint16: clamp 0..65535; uint32: clamp 0..2^32-1 (дробная часть отбрасывается);
+    float: любое значение, кроме NaN/Inf — они заменяются на 0.
+    """
+    if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+        return 0.0 if fmt.is_float else 0
+    if fmt.is_float:
+        return float(value)
+    int_value = int(value)
+    hi = 0xFFFF if fmt is RegisterFormat.UINT16 else 0xFFFFFFFF
+    return max(0, min(hi, int_value))
