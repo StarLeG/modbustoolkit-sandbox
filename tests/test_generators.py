@@ -349,3 +349,37 @@ def test_ramp_oneshot_validation() -> None:
         _gen("ramp_oneshot", {"then": "bogus"})
     with pytest.raises(TypeError, match="then"):
         _gen("ramp_oneshot", {"then": True})
+
+
+# --- TASK-220: countdown ---------------------------------------------------------------
+
+
+def test_countdown_default_steps_once_per_second() -> None:
+    gen = _gen("countdown", {"start": 10, "step": 1})
+    assert gen.update(0.0) == 10
+    assert gen.update(0.99) == 10
+    assert gen.update(1.0) == 9
+    assert gen.update(3.5) == 7
+
+
+def test_countdown_saturates_at_min() -> None:
+    gen = _gen("countdown", {"start": 3, "step": 1, "min": 0})
+    assert gen.update(3.0) == 0
+    assert gen.update(99.0) == 0  # ниже min не опускается
+
+
+def test_countdown_step_and_interval() -> None:
+    gen = _gen("countdown", {"start": 100, "step": 25, "min": 10, "interval_s": 0.5})
+    assert gen.update(0.0) == 100
+    assert gen.update(0.5) == 75
+    assert gen.update(1.0) == 50
+    assert gen.update(3.6) == 10  # насыщение на min
+
+
+def test_countdown_validation() -> None:
+    with pytest.raises(ValueError, match="interval_s"):
+        _gen("countdown", {"interval_s": 0})
+    with pytest.raises(ValueError, match="step"):
+        _gen("countdown", {"step": 0})
+    with pytest.raises(ValueError, match="start"):
+        _gen("countdown", {"start": 5, "min": 10})

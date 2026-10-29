@@ -331,6 +331,36 @@ class RampOneshotGenerator:
         return self._start + (self._to - self._start) * (now / self._duration)
 
 
+class CountdownGenerator:
+    """`countdown`: обратный отсчёт `max(min, start - step * floor(now / interval_s))`.
+
+    Шаг раз в `interval_s` (как у `counter`, ADR-003 п. 2); насыщение на `min`.
+    """
+
+    is_static = False
+
+    def __init__(
+        self,
+        params: dict[str, Any],
+        binding: Binding,
+        ctx: GeneratorContext,
+        rng: random.Random,
+    ) -> None:
+        _ = binding, ctx, rng
+        self._start = _num(params, "start", 100)
+        self._step = _num(params, "step", 1)
+        self._min = _num(params, "min", 0)
+        self._interval = _positive(params, "interval_s", 1.0)
+        if self._step <= 0:
+            raise ValueError(f"countdown: step должен быть > 0, получено: {self._step!r}")
+        if self._start < self._min:
+            raise ValueError(f"countdown: start {self._start!r} < min {self._min!r}")
+
+    def update(self, now: float) -> int | float:
+        n = math.floor(now / self._interval)
+        return max(self._min, self._start - self._step * n)
+
+
 def create_generator(
     behavior: Behavior,
     binding: Binding,
@@ -363,4 +393,6 @@ def create_generator(
         return RandomWalkGenerator(params, binding, ctx, rng)
     if behavior.kind == "ramp_oneshot":
         return RampOneshotGenerator(params, binding, ctx, rng)
+    if behavior.kind == "countdown":
+        return CountdownGenerator(params, binding, ctx, rng)
     raise ValueError(f"поведение {behavior.kind!r} ещё не реализовано")
