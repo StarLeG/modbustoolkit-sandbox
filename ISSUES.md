@@ -12,7 +12,7 @@
   - `ls`, `pyproject.toml`, `package.json`, `Dockerfile`, `docker-compose.yml`, `nginx/`, `.github/`
   - Записать вывод в `docs/adr/ADR-000-stack.md`
   - Если стек ≠ ожидаемому — согласовать с владельцем
-- [ ] [P0] **TASK-002 · Создать каркас модуля `app/modbus/`**
+- [x] [P0] **TASK-002 · Создать каркас модуля `app/modbus/`**
   - `__init__.py`, `config.py` (env), `types.py` (area/slave/format)
   - Подключить `pymodbus`, `fastapi`, `uvicorn`
 - [x] [P0] **TASK-003 · `docs/HRIR_SPEC.md`** — перенести спецификацию форматов в репозиторий
