@@ -239,6 +239,47 @@ class RandomUniformGenerator:
         return self._rng.uniform(self._min, self._max)
 
 
+class RandomWalkGenerator:
+    """`random_walk`: блуждание `pos += U(-step, step) + mean_reversion * (center - pos)`.
+
+    Стартовая точка — центр `[min, max]`; после каждого шага позиция клампится
+    в `[min, max]`.
+    """
+
+    is_static = False
+
+    def __init__(
+        self,
+        params: dict[str, Any],
+        binding: Binding,
+        ctx: GeneratorContext,
+        rng: random.Random,
+    ) -> None:
+        _ = binding, ctx
+        self._rng = rng
+        self._min = _num(params, "min", 0)
+        self._max = _num(params, "max", 100)
+        self._step = _num(params, "step", 1)
+        self._mean_rev = _num(params, "mean_reversion", 0.0)
+        if self._max < self._min:
+            raise ValueError(f"random_walk: max {self._max!r} < min {self._min!r}")
+        if self._step < 0:
+            raise ValueError(f"random_walk: step должен быть >= 0, получено: {self._step!r}")
+        if not 0 <= self._mean_rev <= 1:
+            raise ValueError(
+                f"random_walk: mean_reversion должен быть в 0..1, получено: {self._mean_rev!r}"
+            )
+        self._center = (self._min + self._max) / 2
+        self._pos = self._center
+
+    def update(self, now: float) -> int | float:
+        _ = now
+        self._pos += self._rng.uniform(-self._step, self._step)
+        self._pos += self._mean_rev * (self._center - self._pos)
+        self._pos = min(max(self._pos, self._min), self._max)
+        return self._pos
+
+
 def create_generator(
     behavior: Behavior,
     binding: Binding,
@@ -267,4 +308,6 @@ def create_generator(
         return SineGenerator(params, binding, ctx, rng)
     if behavior.kind == "random_uniform":
         return RandomUniformGenerator(params, binding, ctx, rng)
+    if behavior.kind == "random_walk":
+        return RandomWalkGenerator(params, binding, ctx, rng)
     raise ValueError(f"поведение {behavior.kind!r} ещё не реализовано")

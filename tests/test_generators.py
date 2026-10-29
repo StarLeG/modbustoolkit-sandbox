@@ -278,3 +278,33 @@ def test_random_uniform_deterministic_with_seed() -> None:
 def test_random_uniform_validation() -> None:
     with pytest.raises(ValueError, match="max"):
         _gen("random_uniform", {"min": 5, "max": 1})
+
+
+# --- TASK-218: random_walk -------------------------------------------------------------
+
+
+def test_random_walk_stays_in_bounds() -> None:
+    gen = _gen("random_walk", {"min": 0, "max": 100, "step": 30, "mean_reversion": 0}, seed=3)
+    for _ in range(200):
+        value = gen.update(0.0)
+        assert 0 <= value <= 100
+
+
+def test_random_walk_starts_at_center() -> None:
+    gen = _gen("random_walk", {"min": 0, "max": 100, "step": 0, "mean_reversion": 0}, seed=3)
+    assert gen.update(0.0) == pytest.approx(50)  # step=0 → остаётся в центре
+
+
+def test_random_walk_mean_reversion_pulls_to_center() -> None:
+    gen = _gen("random_walk", {"min": 0, "max": 100, "step": 0, "mean_reversion": 0.5}, seed=3)
+    gen._pos = 80.0  # начальное отклонение для проверки стягивания к центру
+    assert gen.update(0.0) == pytest.approx(65)  # 80 + 0.5*(50-80)
+
+
+def test_random_walk_validation() -> None:
+    with pytest.raises(ValueError, match="max"):
+        _gen("random_walk", {"min": 5, "max": 1})
+    with pytest.raises(ValueError, match="step"):
+        _gen("random_walk", {"step": -1})
+    with pytest.raises(ValueError, match="mean_reversion"):
+        _gen("random_walk", {"mean_reversion": 1.5})
