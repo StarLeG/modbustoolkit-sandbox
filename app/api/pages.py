@@ -308,6 +308,20 @@ def _behaviors_body() -> str:
         f'  <label>Область <select id="bh-area">{area_options}</select></label>\n'
         '  <label>Адрес <input id="bh-address" type="number" min="1" value="1"></label>\n'
         "</p>\n"
+        "<h2>Пресеты</h2>\n"
+        '<p class="note">Быстрая настройка формы ниже: заполняет поведение и '
+        "параметры. Пресеты работают для числовых областей <code>hr</code>/<code>ir</code>; "
+        "«Сброс» — константа 0.</p>\n"
+        '<p id="bh-presets">\n'
+        '  <button type="button" data-preset="counter">Счётчик</button>\n'
+        '  <button type="button" data-preset="sawtooth">Пила</button>\n'
+        '  <button type="button" data-preset="triangle">Треугольник</button>\n'
+        '  <button type="button" data-preset="meander">Меандр</button>\n'
+        '  <button type="button" data-preset="noise">Шум</button>\n'
+        '  <button type="button" data-preset="sine">Синус</button>\n'
+        '  <button type="button" data-preset="step">Ступеньки</button>\n'
+        '  <button type="button" data-preset="reset">Сброс</button>\n'
+        "</p>\n"
         "<p>\n"
         '  <label>Поведение <select id="bh-kind"></select></label>\n'
         '  <label><input id="bh-locked" type="checkbox"> Заблокировать '

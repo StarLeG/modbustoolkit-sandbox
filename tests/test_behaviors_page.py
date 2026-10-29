@@ -120,3 +120,55 @@ def test_behaviors_js_lists_overrides() -> None:
     js = response.text
     assert "/api/modbus/behaviors?only_overrides=true" in js
     assert "refreshList" in js
+
+
+def test_behaviors_page_has_presets() -> None:
+    """Пресеты: счётчик, пила, треугольник, меандр, шум, синус, ступеньки, сброс (TASK-722)."""
+    with _client() as client:
+        response = client.get("/behaviors")
+    html = response.text
+    assert 'id="bh-presets"' in html
+    for preset in (
+        "counter",
+        "sawtooth",
+        "triangle",
+        "meander",
+        "noise",
+        "sine",
+        "step",
+        "reset",
+    ):
+        assert f'data-preset="{preset}"' in html, preset
+    for label in ("Счётчик", "Пила", "Треугольник", "Меандр", "Шум", "Синус", "Ступеньки", "Сброс"):
+        assert label in html, label
+
+
+def test_behaviors_js_presets_fill_form() -> None:
+    """Пресет заполняет kind + params формы и требует «Установить» (TASK-722)."""
+    with _client() as client:
+        response = client.get("/static/behaviors.js")
+    js = response.text
+    assert "PRESETS" in js
+    assert "applyPreset" in js
+    assert "reset:" in js
+    assert "renderParams" in js
+    # пресеты ограничены числовыми областями
+    assert 'area !== "hr" && area !== "ir"' in js
+
+
+def test_behaviors_js_preset_kinds_valid() -> None:
+    """Kind'ы пресетов — из NUMERIC_KINDS (check_kind_for_area)."""
+    with _client() as client:
+        response = client.get("/static/behaviors.js")
+    js = response.text
+    for fragment in (
+        'kind: "counter"',
+        'kind: "sawtooth"',
+        'kind: "triangle"',
+        'kind: "meander"',
+        'kind: "random_uniform"',
+        'kind: "sine"',
+        'kind: "step"',
+        'kind: "constant"',
+    ):
+        assert fragment in js, fragment

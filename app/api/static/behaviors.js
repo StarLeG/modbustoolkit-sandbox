@@ -136,6 +136,39 @@ function el(id) {
   return document.getElementById(id);
 }
 
+// Пресеты (TASK-722): быстрая настройка формы — kind + params одним нажатием.
+// Работают для hr/ir (числовые поведения); «reset» — константа 0.
+const PRESETS = {
+  counter: { kind: "counter", params: { start: 0, step: 1, min: 0, max: 65535, wrap: true, interval_s: 1 } },
+  sawtooth: { kind: "sawtooth", params: { min: 0, max: 100, period_s: 10, phase: 0 } },
+  triangle: { kind: "triangle", params: { min: 0, max: 100, period_s: 10, phase: 0 } },
+  meander: { kind: "meander", params: { min: 0, max: 100, period_s: 10, duty: 0.5, phase: 0 } },
+  noise: { kind: "random_uniform", params: { min: 0, max: 100 } },
+  sine: { kind: "sine", params: { min: 0, max: 100, period_s: 10, phase: 0 } },
+  step: { kind: "step", params: { values: "0, 1", interval_s: 1 } },
+  reset: { kind: "constant", params: { value: 0 } },
+};
+
+// Заполнить форму пресетом: kind → renderParams() → выставить значения полей.
+function applyPreset(name) {
+  const preset = PRESETS[name];
+  if (!preset) return;
+  const area = el("bh-area").value;
+  if (area !== "hr" && area !== "ir") {
+    showError("пресеты работают для областей hr/ir (для cl/di выберите поведение вручную)");
+    return;
+  }
+  el("bh-kind").value = preset.kind;
+  renderParams();
+  for (const [key, value] of Object.entries(preset.params)) {
+    const input = el("bh-param-" + key);
+    if (!input) continue;
+    if (input.type === "checkbox") input.checked = Boolean(value);
+    else input.value = String(value);
+  }
+  el("bh-status").textContent = "Пресет «" + name + "» загружен в форму — нажмите «Установить».";
+}
+
 function kindsForArea(area) {
   return area === "hr" || area === "ir" ? NUMERIC_KINDS : DISCRETE_KINDS;
 }
@@ -326,6 +359,11 @@ function init() {
   el("bh-kind").addEventListener("change", renderParams);
   el("bh-apply").addEventListener("click", apply);
   el("bh-refresh").addEventListener("click", refreshList);
+  for (const button of document.querySelectorAll("#bh-presets button[data-preset]")) {
+    button.addEventListener("click", function () {
+      applyPreset(this.dataset.preset);
+    });
+  }
   renderKinds();
   refreshList();
 }
