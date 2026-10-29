@@ -530,6 +530,44 @@ class CounterBitsGenerator:
         return bool((int(now) >> self._bit) & 1)
 
 
+class FollowBitGenerator:
+    """`follow_bit`: бит `bit` значения из `source` (например `"hr:15"`).
+
+    Источник hr/ir — целое значение, берётся его бит `bit` (по умолчанию 0);
+    источник cl/di — сам бит, параметр `bit` игнорируется.
+    """
+
+    is_static = False
+
+    def __init__(
+        self,
+        params: dict[str, Any],
+        binding: Binding,
+        ctx: GeneratorContext,
+        rng: random.Random,
+    ) -> None:
+        _ = rng
+        self._ctx = ctx
+        raw = params.get("source")
+        if not isinstance(raw, str):
+            raise TypeError(
+                f"follow_bit: source должен быть строкой 'area:address', получено: {raw!r}"
+            )
+        self._source = _parse_source(raw, binding[0])
+        bit = params.get("bit", 0)
+        if isinstance(bit, bool) or not isinstance(bit, int):
+            raise TypeError(f"follow_bit: bit должен быть целым, получено: {bit!r}")
+        if bit < 0:
+            raise ValueError(f"follow_bit: bit должен быть >= 0, получено: {bit!r}")
+        self._bit = bit
+
+    def update(self, now: float) -> bool:
+        _ = now
+        if self._source[1] in ("cl", "di"):
+            return self._ctx.read_bit(self._source)
+        return bool((int(self._ctx.read_value(self._source)) >> self._bit) & 1)
+
+
 def create_generator(
     behavior: Behavior,
     binding: Binding,
@@ -576,4 +614,6 @@ def create_generator(
         return RandomBitGenerator(params, binding, ctx, rng)
     if behavior.kind == "counter_bits":
         return CounterBitsGenerator(params, binding, ctx, rng)
+    if behavior.kind == "follow_bit":
+        return FollowBitGenerator(params, binding, ctx, rng)
     raise ValueError(f"поведение {behavior.kind!r} ещё не реализовано")

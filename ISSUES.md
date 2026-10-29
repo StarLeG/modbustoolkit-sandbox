@@ -84,7 +84,7 @@
 - [x] [P1] **TASK-233 · pwm** (`period_s, duty`)
 - [x] [P1] **TASK-234 · random_bit** (вероятность)
 - [x] [P0] **TASK-235 · counter_bits** (счётчик секунд → биты)
-- [ ] [P2] **TASK-236 · follow_bit** (`source, bit`)
+- [x] [P2] **TASK-236 · follow_bit** (`source, bit`)
 
 ### 2.4 Валидация и приведение
 - [ ] [P0] **TASK-241 · Валидатор параметров** с учётом формата регистра

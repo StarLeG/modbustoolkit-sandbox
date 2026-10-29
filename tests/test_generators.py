@@ -559,3 +559,34 @@ def test_counter_bits_validation() -> None:
         _gen("counter_bits", {"bit": 1.5}, area="cl")
     with pytest.raises(TypeError, match="bit"):
         _gen("counter_bits", {"bit": True}, area="cl")
+
+
+# --- TASK-236: follow_bit (bool) --------------------------------------------------------
+
+
+def test_follow_bit_from_register_value() -> None:
+    ctx = FakeCtx()
+    ctx.values[(1, "hr", 15)] = 0b101  # 5
+    assert _gen("follow_bit", {"source": "hr:15", "bit": 0}, area="cl", ctx=ctx).update(0.0) is True
+    assert _gen("follow_bit", {"source": "hr:15", "bit": 1}, area="cl", ctx=ctx).update(0.0) is False
+    assert _gen("follow_bit", {"source": "hr:15", "bit": 2}, area="di", ctx=ctx).update(0.0) is True
+
+
+def test_follow_bit_from_bit_source() -> None:
+    ctx = FakeCtx()
+    ctx.bits[(1, "cl", 3)] = True
+    gen = _gen("follow_bit", {"source": "cl:3", "bit": 5}, area="di", ctx=ctx)
+    assert gen.update(0.0) is True  # для cl/di bit игнорируется
+    ctx.bits[(1, "cl", 3)] = False
+    assert gen.update(1.0) is False
+
+
+def test_follow_bit_validation() -> None:
+    with pytest.raises(TypeError, match="source"):
+        _gen("follow_bit", area="cl")
+    with pytest.raises(ValueError, match="area:address"):
+        _gen("follow_bit", {"source": "hr"}, area="cl")
+    with pytest.raises(ValueError, match="bit"):
+        _gen("follow_bit", {"source": "hr:15", "bit": -1}, area="cl")
+    with pytest.raises(TypeError, match="bit"):
+        _gen("follow_bit", {"source": "hr:15", "bit": 1.5}, area="cl")
