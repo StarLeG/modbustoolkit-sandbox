@@ -5,6 +5,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from app.api.configgen import ConfigTool
 from app.modbus.injection import InjectionKind
 from app.modbus.types import Area, RegisterFormat
 
@@ -303,3 +304,29 @@ class ConvertResponse(BaseModel):
 
     kind: Literal["uint32", "float"]
     rows: list[ConvertRow]
+
+
+class ConfigGenIn(BaseModel):
+    """Вход генератора конфигов клиентских инструментов (TASK-742).
+
+    Цель: `slave`/`area`/`address`/`count` (количество значений; для 32-битных
+    форматов — по 2 регистра на значение). `host`/`port` — необязательные
+    переопределения адреса сервера (по умолчанию — публичный хост и
+    `MODBUS_TCP_PORT`).
+    """
+
+    tool: ConfigTool
+    slave: int = Field(ge=1, le=10)
+    area: Area
+    address: int = Field(ge=1)
+    count: int = Field(default=1, ge=1, le=1024)
+    host: str | None = Field(default=None, max_length=253)
+    port: int | None = Field(default=None, ge=1, le=65535)
+
+
+class ConfigGenResponse(BaseModel):
+    """Сгенерированный конфиг: имя файла для скачивания и его содержимое (TASK-742)."""
+
+    tool: ConfigTool
+    filename: str
+    content: str

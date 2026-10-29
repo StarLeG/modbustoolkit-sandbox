@@ -208,13 +208,16 @@ def _stub_body(title: str) -> str:
 
 
 def _tools_body() -> str:
-    """Инструменты наладчика: конвертер байт/слов (TASK-741).
+    """Инструменты наладчика: конвертер байт/слов (TASK-741) + генератор конфигов (TASK-742).
 
-    Значение ↔ пара регистров во всех 4 порядках (ABCD/CDAB/BADC/DCBA) для
-    uint32 и float. Пересчёт — серверный (`POST /api/modbus/convert`, тот же
-    кодек, что и у слейвов 2..9), поэтому таблица совпадает с реальным
-    поведением сервера. Наполняет `static/tools.js`.
+    Конвертер: значение ↔ пара регистров во всех 4 порядках (ABCD/CDAB/BADC/DCBA)
+    для uint32 и float; пересчёт — серверный (`POST /api/modbus/convert`, тот же
+    кодек, что и у слейвов 2..9). Генератор: готовые настройки/скрипты/flow для
+    Modbus Poll, QModMaster, CAS Scanner, pyModbus и Node-RED
+    (`POST /api/modbus/configgen`). Наполняют `static/tools.js` и
+    `static/configgen.js`.
     """
+    slave_options = "".join(f"<option>{slave_id}</option>" for slave_id in SLAVE_SPECS)
     return (
         "<h2>Конвертер байт/слов</h2>\n"
         '<p class="note">Показывает, в какие два регистра кодируется значение и '
@@ -247,7 +250,40 @@ def _tools_body() -> str:
         "<th>Значение</th></tr></thead>\n"
         '  <tbody id="tool-rows"></tbody>\n'
         "</table>\n"
-        '<script type="module" src="/static/tools.js"></script>'
+        "\n"
+        "<h2>Генератор конфигов</h2>\n"
+        '<p class="note">Готовые настройки для Modbus Poll, QModMaster, '
+        "CAS Modbus Scanner, скрипт для pyModbus и flow для Node-RED: "
+        "подключение, функция, адрес и формат данных выбранного слейва. "
+        "Адрес — из <code>docs/HRIR_SPEC.md</code>, без пересчёта; количество — "
+        "в значениях (для 32-битных слейвов значение занимает 2 регистра).</p>\n"
+        "<p>\n"
+        '  <label>Инструмент <select id="cfg-tool">\n'
+        '    <option value="modbus_poll">Modbus Poll</option>\n'
+        '    <option value="qmodmaster">QModMaster</option>\n'
+        '    <option value="cas_scanner">CAS Modbus Scanner</option>\n'
+        '    <option value="pymodbus">pyModbus (скрипт)</option>\n'
+        '    <option value="nodered">Node-RED (flow)</option>\n'
+        "  </select></label>\n"
+        f'  <label>Unit ID <select id="cfg-slave">{slave_options}</select></label>\n'
+        '  <label>Область <select id="cfg-area">\n'
+        '    <option value="hr">hr — Holding Registers</option>\n'
+        '    <option value="ir">ir — Input Registers</option>\n'
+        '    <option value="cl">cl — Coils</option>\n'
+        '    <option value="di">di — Discrete Inputs</option>\n'
+        "  </select></label>\n"
+        '  <label>Адрес <input id="cfg-address" type="text" value="1"></label>\n'
+        '  <label>Значений <input id="cfg-count" type="text" value="1"></label>\n'
+        "</p>\n"
+        "<p>\n"
+        '  <button id="cfg-generate" type="button">Сгенерировать</button>\n'
+        '  <button id="cfg-copy" type="button">Копировать</button>\n'
+        '  <a id="cfg-download" href="#" download>Скачать</a>\n'
+        '  <span id="cfg-status" role="status"></span>\n'
+        "</p>\n"
+        '<pre id="cfg-output"></pre>\n'
+        '<script type="module" src="/static/tools.js"></script>\n'
+        '<script type="module" src="/static/configgen.js"></script>'
     )
 
 
@@ -548,7 +584,7 @@ def get_injections_page() -> HTMLResponse:
 
 @pages_router.get("/tools", response_class=HTMLResponse)
 def get_tools() -> HTMLResponse:
-    """Инструменты наладчика: конвертер байт/слов (TASK-741); генератор конфигов — TASK-742."""
+    """Инструменты наладчика: конвертер байт/слов (TASK-741) и генератор конфигов (TASK-742)."""
     return HTMLResponse(_shell("Инструменты", "/tools", _tools_body()))
 
 

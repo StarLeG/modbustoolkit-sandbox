@@ -6,12 +6,15 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 
+from app.api.configgen import PUBLIC_HOST, ConfigTarget, generate
 from app.api.models import (
     BatchIn,
     BatchResponse,
     BehaviorIn,
     BehaviorOut,
     BehaviorsResponse,
+    ConfigGenIn,
+    ConfigGenResponse,
     ConvertIn,
     ConvertResponse,
     ConvertRow,
@@ -659,6 +662,30 @@ def post_convert(body: ConvertIn) -> ConvertResponse:
     else:
         raise HTTPException(status_code=400, detail="укажите value или regs")
     return ConvertResponse(kind=body.kind, rows=rows)
+
+
+@router.post("/configgen", response_model=ConfigGenResponse)
+def post_configgen(body: ConfigGenIn, services: ServicesDep) -> ConfigGenResponse:
+    """Генератор конфигов клиентских инструментов (TASK-742).
+
+    Modbus Poll / QModMaster / CAS Modbus Scanner — карточки настроек,
+    pyModbus — готовый скрипт чтения, Node-RED — импортируемый flow. Цель
+    проверяется по `SLAVE_SPECS` (400 вне карты/лимита FC 3/4). Чистая
+    функция: без состояния, лимитов и журнала.
+    """
+    target = ConfigTarget(
+        slave=body.slave,
+        area=body.area,
+        address=body.address,
+        count=body.count,
+        host=body.host or PUBLIC_HOST,
+        port=body.port or services.config.MODBUS_TCP_PORT,
+    )
+    try:
+        result = generate(body.tool, target)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return ConfigGenResponse(tool=body.tool, filename=result.filename, content=result.content)
 
 
 @router.get("/metrics", response_model=MetricsResponse)
