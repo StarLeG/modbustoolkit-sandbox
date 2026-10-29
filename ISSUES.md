@@ -24,7 +24,7 @@
 ## Эпик 1 · Modbus-TCP сервер (ядро)
 
 ### 1.1 Слушатель и карта
-- [ ] [P0] **TASK-101 · Async-сервер pymodbus на :5020**
+- [x] [P0] **TASK-101 · Async-сервер pymodbus на :5020**
   - `ModbusServerContext(single=False)`, 10 unit ID
   - Логирование старта, graceful shutdown
 - [x] [P0] **TASK-102 · Модель карты адресов**

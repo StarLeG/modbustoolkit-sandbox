@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from app.modbus.config import Config
+from app.modbus.server import create_server, run_server, serve
 from app.modbus.slave_map import ModbusMapError, SlaveMap
 from app.modbus.types import (
     AREAS,
@@ -22,4 +23,7 @@ __all__ = [
     "RegisterFormat",
     "SlaveMap",
     "SlaveSpec",
+    "create_server",
+    "run_server",
+    "serve",
 ]
