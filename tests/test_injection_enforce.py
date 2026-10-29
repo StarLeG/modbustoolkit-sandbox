@@ -314,3 +314,52 @@ async def test_ttl_timeout_responds_after_expiry(config: Config) -> None:
         await asyncio.sleep(0.5)
         data = await _raw_request(config, _read_frame(1, 5, 1), timeout=1.0)
         assert data is not None
+
+
+# --- TASK-606: полная матрица ответов --------------------------------------------------
+
+
+async def test_every_code_is_returned_for_every_fc(config: Config) -> None:
+    """Каждый код исключения возвращается на каждом разрешённом FC (TASK-606)."""
+    injections = InjectionRegistry()
+    async with _serving(config, injections) as (client, _maps):
+        for code in EXCEPTION_CODES:
+            injections.clear()
+            injections.add("exception", 1, code=code)
+            requests = [
+                client.read_coils(1, count=1, device_id=1),  # FC 1
+                client.read_discrete_inputs(1, count=1, device_id=1),  # FC 2
+                client.read_holding_registers(5, count=1, device_id=1),  # FC 3
+                client.read_input_registers(5, count=1, device_id=1),  # FC 4
+                client.write_coil(3, True, device_id=1),  # FC 5
+                client.write_register(5, 1, device_id=1),  # FC 6
+                client.write_registers(5, [1, 2], device_id=1),  # FC 16
+            ]
+            for request in requests:
+                response = await request
+                assert response.isError(), code
+                assert response.exception_code == code
+
+
+async def test_forbidden_fc_stays_illegal_function_under_injection(config: Config) -> None:
+    """Гейт FC главнее инъекций: запрещённый FC отвечает 0x01 (ADR-007 п. 2)."""
+    injections = InjectionRegistry()
+    injections.add("exception", 1, code=0x02)
+    async with _serving(config, injections) as (client, _maps):
+        response = await client.write_coils(1, [True, False, True], device_id=1)  # FC 15
+        assert response.isError() and response.exception_code == 0x01
+        response = await client.report_device_id(device_id=1)  # FC 17
+        assert response.isError() and response.exception_code == 0x01
+
+
+async def test_first_matching_injection_wins(config: Config) -> None:
+    """При пересечении действует первая добавленная; снятие раскрывает следующую."""
+    injections = InjectionRegistry()
+    first = injections.add("exception", 1, code=0x01)
+    injections.add("exception", 1, code=0x02)
+    async with _serving(config, injections) as (client, _maps):
+        response = await client.read_holding_registers(5, count=1, device_id=1)
+        assert response.isError() and response.exception_code == 0x01
+        injections.clear(injection_id=first.id)
+        response = await client.read_holding_registers(5, count=1, device_id=1)
+        assert response.isError() and response.exception_code == 0x02
