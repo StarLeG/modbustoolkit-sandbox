@@ -37,6 +37,7 @@ NAV_SECTIONS: tuple[tuple[str, str], ...] = (
     ("/behaviors", "Поведения"),
     ("/timezones", "Часовые пояса"),
     ("/injections", "Инъекции"),
+    ("/journal", "Журнал"),
     ("/tools", "Инструменты"),
     ("/docs", "Документация"),
 )
@@ -554,6 +555,33 @@ def _injections_body() -> str:
     )
 
 
+def _journal_body() -> str:
+    """Страница «Журнал событий» (TASK-745): последние 1000 записей + live.
+
+    Наполняет `static/journal.js`: стартовая загрузка через
+    `GET /api/modbus/journal?limit=1000`, новые события — кадрами `/ws/events`
+    (TASK-404). Записи общие для всех пользователей, хранение — в памяти.
+    """
+    return (
+        "<h2>Журнал событий</h2>\n"
+        '<p class="note">Последние <code>JOURNAL_SIZE</code> (1000) записей: '
+        "записи в регистры, смена поведений, инъекции и отказы locked-поведений. "
+        "Журнал живёт в памяти (перезапуск сервера — сброс) и общий для всех "
+        "пользователей. Новые события приходят live по <code>/ws/events</code>, "
+        "снимок — <code>GET /api/modbus/journal</code>.</p>\n"
+        "<p>\n"
+        '  <button id="journal-refresh" type="button">Обновить</button>\n'
+        '  <span id="journal-status" role="status"></span>\n'
+        "</p>\n"
+        '<table class="values">\n'
+        "  <thead><tr><th>Время</th><th>Источник</th><th>IP</th><th>Действие</th>"
+        "<th>Unit ID</th><th>Область</th><th>Адрес</th><th>Значение</th></tr></thead>\n"
+        '  <tbody id="journal-rows"></tbody>\n'
+        "</table>\n"
+        '<script type="module" src="/static/journal.js"></script>'
+    )
+
+
 def _shell(title: str, active: str, body: str) -> str:
     nav = "".join(
         f'<a href="{href}" class="nav-link{" active" if href == active else ""}">{label}</a>'
@@ -614,6 +642,12 @@ def get_timezones() -> HTMLResponse:
 def get_injections_page() -> HTMLResponse:
     """Инъекции ошибок: форма добавления и список активных (TASK-605, TASK-743)."""
     return HTMLResponse(_shell("Инъекции", "/injections", _injections_body()))
+
+
+@pages_router.get("/journal", response_class=HTMLResponse)
+def get_journal_page() -> HTMLResponse:
+    """Журнал событий: последние 1000 записей + live (TASK-745)."""
+    return HTMLResponse(_shell("Журнал", "/journal", _journal_body()))
 
 
 @pages_router.get("/tools", response_class=HTMLResponse)

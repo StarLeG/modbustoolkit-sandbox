@@ -244,6 +244,7 @@ def test_all_sections_serve_shell_with_banner() -> None:
             "/behaviors",
             "/timezones",
             "/injections",
+            "/journal",
             "/tools",
             "/docs",
         ):
