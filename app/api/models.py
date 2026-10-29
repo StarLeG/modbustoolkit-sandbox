@@ -5,7 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from app.modbus.types import Area
+from app.modbus.types import Area, RegisterFormat
 
 
 class BehaviorIn(BaseModel):
@@ -83,3 +83,16 @@ class ResetResponse(BaseModel):
     """Число сброшенных переопределений (дефолтные привязки не считаются)."""
 
     reset: int
+
+
+class StateResponse(BaseModel):
+    """Снимок значений слейва (TASK-305).
+
+    Значения — по сетке адресов (1,3,…,1023 для 32-битных форматов),
+    декодированы по `fmt`; биты cl/di — bool. Исключение slave 10: IR 300 —
+    одно значение UINT32_ABCD (Unix timestamp, `docs/HRIR_SPEC.md`).
+    """
+
+    slave: int
+    fmt: RegisterFormat
+    areas: dict[Area, dict[str, int | float | bool]]

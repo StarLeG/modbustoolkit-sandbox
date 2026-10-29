@@ -13,6 +13,7 @@ from app.api.models import (
     BehaviorsResponse,
     ResetIn,
     ResetResponse,
+    StateResponse,
 )
 from app.api.services import AppServices
 from app.modbus.behavior import (
@@ -22,8 +23,11 @@ from app.modbus.behavior import (
     check_kind_for_area,
     default_behavior,
 )
+from app.modbus.codec import decode
 from app.modbus.journal import JournalEntry
-from app.modbus.types import Area
+from app.modbus.slave10 import TIMESTAMP_ADDR
+from app.modbus.slave_map import SlaveMap
+from app.modbus.types import AREAS, Area, RegisterFormat
 
 router = APIRouter(prefix="/api/modbus")
 
@@ -52,6 +56,38 @@ def _behavior_out(behavior: Behavior, binding: Binding) -> BehaviorOut:
         locked=behavior.locked,
         is_default=behavior is default_behavior(slave, area, address),
     )
+
+
+def _slave10_ir_values(smap: SlaveMap) -> dict[str, int | float | bool]:
+    """IR slave 10: 1..268 — uint16-метрики, 300 — Unix timestamp (UINT32_ABCD)."""
+    values: dict[str, int | float | bool] = {}
+    for address in range(1, 269):
+        values[str(address)] = smap.get_registers("ir", address, 1)[0]
+    values[str(TIMESTAMP_ADDR)] = decode(
+        smap.get_registers("ir", TIMESTAMP_ADDR, 2), RegisterFormat.UINT32_ABCD
+    )
+    return values
+
+
+def _area_values(smap: SlaveMap, area: Area) -> dict[str, int | float | bool]:
+    """Значения области по сетке адресов (TASK-305).
+
+    hr/ir декодируются по формату слейва (для 32-битных — значения 1,3,…,1023),
+    cl/di — bool. Неинициализированные регистры читаются как 0 (sparse-хранилище).
+    """
+    if smap.spec.slave_id == 10 and area == "ir":
+        return _slave10_ir_values(smap)
+    fmt = smap.spec.fmt
+    values: dict[str, int | float | bool] = {}
+    bit_area = area in ("cl", "di")
+    for rng in smap.spec.area_ranges(area):
+        for address in range(rng.start, rng.stop + 1, rng.step):
+            if bit_area:
+                values[str(address)] = smap.get_bits(area, address, 1)[0]
+            else:
+                raw = smap.get_registers(area, address, fmt.registers_per_value)
+                values[str(address)] = decode(raw, fmt)
+    return values
 
 
 @router.get("/behaviors", response_model=BehaviorsResponse)
@@ -218,3 +254,29 @@ def post_behaviors_reset(
             )
         )
     return ResetResponse(reset=count)
+
+
+@router.get("/state", response_model=StateResponse)
+def get_state(
+    services: ServicesDep,
+    slave: Annotated[int, Query(ge=1, le=10)],
+    area: Annotated[Area | None, Query()] = None,
+) -> StateResponse:
+    """Снимок значений слейва (TASK-305).
+
+    Без `area` — все области, которые есть на слейве (для slave 10 — только ir).
+    Значения — по сетке адресов, декодированы по формату слейва. Запрос области,
+    отсутствующей на слейве (cl/di/hr на slave 10), → 400.
+    """
+    smap = services.maps[slave]
+    if area is not None:
+        if not smap.spec.area_ranges(area):
+            raise HTTPException(status_code=400, detail=f"slave {slave}: область {area} отсутствует")
+        areas_to_read: tuple[Area, ...] = (area,)
+    else:
+        areas_to_read = tuple(a for a in AREAS if smap.spec.area_ranges(a))
+    return StateResponse(
+        slave=slave,
+        fmt=smap.spec.fmt,
+        areas={a: _area_values(smap, a) for a in areas_to_read},
+    )
