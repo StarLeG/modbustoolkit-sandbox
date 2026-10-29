@@ -1,10 +1,12 @@
-"""TASK-401: /ws/state — подписка {slave, areas, addresses?} (ADR-005 п. 2).
+"""TASK-401/402: /ws/state — подписка {slave, areas, addresses?} и рассылка.
 
-Первый кадр сразу после подписки (подтверждение); периодичность — TASK-402.
+Подписка — ADR-005 п. 2; первый кадр сразу (подтверждение), далее тикер
+`WS_STATE_HZ` (TASK-402).
 """
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -111,3 +113,36 @@ def test_ws_state_bad_subscription() -> None:
                 assert match in frame["detail"]
                 with pytest.raises(WebSocketDisconnect):
                     ws.receive_text()  # сервер закрыл соединение (1008)
+
+
+# --- периодическая рассылка (TASK-402) ----------------------------------------------------
+
+
+def test_ws_state_periodic_frames() -> None:
+    services = build_services(replace(Config(), WS_STATE_HZ=10))
+    with _client(services) as client, client.websocket_connect("/ws/state") as ws:
+        ws.send_text(json.dumps({"slave": 1, "areas": ["hr"], "addresses": [5]}))
+        first = ws.receive_json()
+        services.maps[1].set_registers("hr", 5, [7])
+        frames = [ws.receive_json() for _ in range(3)]
+    assert first["areas"] == {"hr": {"5": 0}}  # кадр-подтверждение сразу после подписки
+    assert all(frame["type"] == "state" for frame in frames)
+    # тикер (10 Гц в тесте) подхватил новое значение — минимум один из ближайших кадров
+    assert any(frame["areas"] == {"hr": {"5": 7}} for frame in frames)
+
+
+def test_ws_state_periodic_to_multiple_clients() -> None:
+    services = build_services(replace(Config(), WS_STATE_HZ=10))
+    with (
+        _client(services) as client,
+        client.websocket_connect("/ws/state") as ws1,
+        client.websocket_connect("/ws/state") as ws2,
+    ):
+        ws1.send_text(json.dumps({"slave": 1, "areas": ["cl"], "addresses": [1]}))
+        ws2.send_text(json.dumps({"slave": 2, "areas": ["hr"], "addresses": [1]}))
+        ws1.receive_json()  # подтверждения подписки
+        ws2.receive_json()
+        frame1 = ws1.receive_json()
+        frame2 = ws2.receive_json()
+    assert frame1["slave"] == 1  # каждый клиент получает свой слейв
+    assert frame2["slave"] == 2

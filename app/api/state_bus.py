@@ -114,6 +114,7 @@ class WebStateBus:
         self._queue_size = queue_size
         self._send_timeout_s = send_timeout_s
         self._clients: list[WsClient] = []
+        self._ticker: asyncio.Task[None] | None = None
 
     @property
     def clients(self) -> tuple[WsClient, ...]:
@@ -127,6 +128,8 @@ class WebStateBus:
         client = WsClient(ws=ws, kind=kind, queue=asyncio.Queue(maxsize=self._queue_size))
         client.sender = asyncio.create_task(self._sender(client))
         self._clients.append(client)
+        if kind == "state" and self._ticker is None:
+            self._ticker = asyncio.create_task(self._state_loop())
         return client
 
     def remove_client(self, client: WsClient) -> None:
@@ -141,6 +144,9 @@ class WebStateBus:
             current = None
         if sender is not None and sender is not current:
             sender.cancel()
+        if self._ticker is not None and not any(c.kind == "state" for c in self._clients):
+            self._ticker.cancel()
+            self._ticker = None
 
     def set_subscription(self, client: WsClient, subscription: StateSubscription) -> None:
         """Подписка/переподписка; первый кадр уходит сразу (ADR-005 п. 2)."""
@@ -192,3 +198,11 @@ class WebStateBus:
         except Exception:
             logger.debug("ws: ошибка отправки, клиент отключается", exc_info=True)
             await self._close_client(client)
+
+    async def _state_loop(self) -> None:
+        """Тикер периодической рассылки состояния (TASK-402)."""
+        while True:
+            await asyncio.sleep(self._state_interval)
+            for client in tuple(self._clients):
+                if client.kind == "state":
+                    self._enqueue_state(client)
