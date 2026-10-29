@@ -128,3 +128,32 @@ def test_counter_interval_must_be_positive() -> None:
 def test_counter_min_max_validation() -> None:
     with pytest.raises(ValueError, match="max"):
         _gen("counter", {"min": 5, "max": 1})
+
+
+# --- TASK-213: sawtooth ----------------------------------------------------------------
+
+
+def test_sawtooth_ramp_and_repeat() -> None:
+    gen = _gen("sawtooth", {"min": 0, "max": 10, "period_s": 4, "phase": 0})
+    assert gen.update(0.0) == 0
+    assert gen.update(1.0) == 2.5
+    assert gen.update(2.0) == 5
+    assert gen.update(3.9) == pytest.approx(9.75)
+    assert gen.update(4.0) == 0  # цикл повторяется
+
+
+def test_sawtooth_phase() -> None:
+    gen = _gen("sawtooth", {"min": 0, "max": 10, "period_s": 4, "phase": 0.25})
+    assert gen.update(0.0) == 2.5
+
+
+def test_sawtooth_flat_limits() -> None:
+    gen = _gen("sawtooth", {"min": 3, "max": 3, "period_s": 2})
+    assert gen.update(0.5) == 3
+
+
+def test_sawtooth_validation() -> None:
+    with pytest.raises(ValueError, match="period_s"):
+        _gen("sawtooth", {"period_s": 0})
+    with pytest.raises(ValueError, match="max"):
+        _gen("sawtooth", {"min": 5, "max": 1})

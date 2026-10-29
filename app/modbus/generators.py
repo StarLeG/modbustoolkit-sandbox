@@ -103,6 +103,31 @@ class CounterGenerator:
         return min(max(value, self._min), self._max)
 
 
+class SawtoothGenerator:
+    """`sawtooth`: линейная пила min→max за `period_s`, повтор; `phase` — доля периода."""
+
+    is_static = False
+
+    def __init__(
+        self,
+        params: dict[str, Any],
+        binding: Binding,
+        ctx: GeneratorContext,
+        rng: random.Random,
+    ) -> None:
+        _ = binding, ctx, rng
+        self._min = _num(params, "min", 0)
+        self._max = _num(params, "max", 100)
+        self._period = _positive(params, "period_s", 10.0)
+        self._phase = _num(params, "phase", 0.0)
+        if self._max < self._min:
+            raise ValueError(f"sawtooth: max {self._max!r} < min {self._min!r}")
+
+    def update(self, now: float) -> int | float:
+        frac = (now / self._period + self._phase) % 1.0
+        return self._min + (self._max - self._min) * frac
+
+
 def create_generator(
     behavior: Behavior,
     binding: Binding,
@@ -121,4 +146,6 @@ def create_generator(
         return ConstantGenerator(raw if isinstance(raw, (int, float)) else 0)
     if behavior.kind == "counter":
         return CounterGenerator(params, binding, ctx, rng)
+    if behavior.kind == "sawtooth":
+        return SawtoothGenerator(params, binding, ctx, rng)
     raise ValueError(f"поведение {behavior.kind!r} ещё не реализовано")
