@@ -113,3 +113,36 @@ async def test_fc3_slave10_absent(client: AsyncModbusTcpClient) -> None:
     response = await client.read_holding_registers(1, count=1, device_id=10)
     assert response.isError()
     assert response.exception_code == 0x02
+
+
+# --- TASK-113: FC 5 — запись одного coil (CL) ------------------------------------------
+
+
+async def test_fc5_write_single_coil_true(client: AsyncModbusTcpClient) -> None:
+    response = await client.write_coil(5, True, device_id=1)
+    assert not response.isError()
+    back = await client.read_coils(5, count=1, device_id=1)
+    assert back.bits[:1] == [True]
+
+
+async def test_fc5_write_single_coil_false_with_echo(client: AsyncModbusTcpClient) -> None:
+    response = await client.write_coil(6, False, device_id=2)
+    assert not response.isError()
+    # Echo-ответ FC 5 содержит состояние coil после записи.
+    assert response.bits[:1] == [False]
+    back = await client.read_coils(6, count=1, device_id=2)
+    assert back.bits[:1] == [False]
+
+
+async def test_fc5_on_slaves_1_to_9(client: AsyncModbusTcpClient) -> None:
+    for device_id in range(1, 10):
+        response = await client.write_coil(64, True, device_id=device_id)
+        assert not response.isError(), f"slave {device_id}"
+        back = await client.read_coils(64, count=1, device_id=device_id)
+        assert back.bits[:1] == [True], f"slave {device_id}"
+
+
+async def test_fc5_slave10_absent(client: AsyncModbusTcpClient) -> None:
+    response = await client.write_coil(1, True, device_id=10)
+    assert response.isError()
+    assert response.exception_code == 0x02
