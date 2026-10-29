@@ -102,6 +102,12 @@ table.values td input {
   width: 7rem;
 }
 
+#chart-canvas {
+  width: 100%;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+}
+
 .note {
   color: #555;
   font-size: 0.95rem;

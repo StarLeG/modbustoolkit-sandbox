@@ -154,7 +154,7 @@
 - [x] [P0] **TASK-712 · Форматирование** HEX / DEC / FLOAT / signed / unsigned — по формату слейва
 - [x] [P0] **TASK-713 · Inline-редактор CL/HR** с плашкой про перезапись
 - [x] [P1] **TASK-714 · Watch list** (localStorage, WS-подписка)
-- [ ] [P1] **TASK-715 · Live-график** 60–300 с для выбранных регистров
+- [x] [P1] **TASK-715 · Live-график** 60–300 с для выбранных регистров
 
 ### 7.3 Поведения
 - [ ] [P0] **TASK-721 · Форма выбора slave/area/address-range → behavior → params**

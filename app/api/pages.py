@@ -269,6 +269,16 @@ def _registers_body() -> str:
         '  <button id="watch-clear" type="button">Очистить список</button>\n'
         '  <span id="watch-status" role="status"></span>\n'
         "</p>\n"
+        "<h2>График</h2>\n"
+        "<p>\n"
+        "  <label>Окно\n"
+        '    <select id="chart-window">\n'
+        "      <option>60</option><option>120</option><option>300</option>\n"
+        "    </select>\n"
+        "  </label> с — live-график регистров из избранного\n"
+        "</p>\n"
+        '<canvas id="chart-canvas" width="800" height="240"></canvas>\n'
+        '<script type="module" src="/static/chart.js"></script>\n'
         "<script>window.REGISTER_MAP = " + _register_map_json() + ";</script>\n"
         '<script type="module" src="/static/registers.js"></script>\n'
         '<script type="module" src="/static/watchlist.js"></script>'

@@ -142,6 +142,39 @@ def test_registers_js_emits_watch_add() -> None:
     assert "watch-add" in response.text
 
 
+def test_registers_page_has_chart() -> None:
+    """Live-график избранного: canvas и окно 60–300 с (TASK-715)."""
+    with _client() as client:
+        response = client.get("/registers")
+    html = response.text
+    for fragment in (
+        'id="chart-canvas"',
+        'id="chart-window"',
+        "60",
+        "120",
+        "300",
+        'src="/static/chart.js"',
+    ):
+        assert fragment in html, fragment
+
+
+def test_chart_js_live_history() -> None:
+    """График копит историю из watch-value и рисует canvas (TASK-715)."""
+    with _client() as client:
+        response = client.get("/static/chart.js")
+    assert response.status_code == 200
+    js = response.text
+    for fragment in ("watch-value", "getContext", "HISTORY_S"):
+        assert fragment in js, fragment
+
+
+def test_watchlist_js_publishes_values() -> None:
+    """Watch list публикует watch-value для графика (TASK-715)."""
+    with _client() as client:
+        response = client.get("/static/watchlist.js")
+    assert "watch-value" in response.text
+
+
 def test_injections_page_has_clear_button() -> None:
     """Кнопка «Сбросить инъекции» → REST /inject/clear (TASK-605).
 

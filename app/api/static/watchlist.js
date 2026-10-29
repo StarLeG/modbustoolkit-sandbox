@@ -112,19 +112,21 @@ function clearList() {
 }
 
 function applyFrame(frame) {
-  let changed = false;
   for (const [area, values] of Object.entries(frame.areas || {})) {
     for (const [address, value] of Object.entries(values)) {
       const key = frame.slave + "/" + area + "/" + Number(address);
-      if (!state.values.has(key) || state.values.get(key) !== value) {
-        state.values.set(key, value);
-        changed = true;
-        const cell = el("watch-cell-" + key);
-        if (cell) cell.textContent = String(value);
-      }
+      if (state.values.has(key) && state.values.get(key) === value) continue;
+      state.values.set(key, value);
+      const cell = el("watch-cell-" + key);
+      if (cell) cell.textContent = String(value);
+      // событие ловит chart.js (TASK-715) для истории графика
+      document.dispatchEvent(
+        new CustomEvent("watch-value", {
+          detail: { slave: frame.slave, area: area, address: Number(address), value: value },
+        })
+      );
     }
   }
-  return changed;
 }
 
 function connectSlave(slave) {
