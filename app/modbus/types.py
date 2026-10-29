@@ -83,6 +83,19 @@ class SlaveSpec:
     def has_address(self, area: Area, address: int) -> bool:
         return any(address in rng for rng in self.area_ranges(area))
 
+    def register_ranges(self, area: Area) -> tuple[AddressRange, ...]:
+        """Сырые адреса регистров/бит, которые видят Modbus-запросы (FC 1..6, 16).
+
+        Сетка адресов значений (area_ranges) для 32-битных форматов идёт с шагом 2,
+        но каждое значение занимает 2 регистра, поэтому сырая область — сплошная и
+        на registers_per_value - 1 шире. Для cl/di (биты) и slave 10 (UINT16,
+        диапазоны заданы сразу в регистрах) совпадает с сеткой значений.
+        """
+        if area in ("cl", "di"):
+            return self.area_ranges(area)
+        span = self.fmt.registers_per_value - 1
+        return tuple(AddressRange(r.start, r.stop + span) for r in self.area_ranges(area))
+
 
 _REG16 = AddressRange(1, 1024)  # slave 1: HR/IR 1..1024
 _REG32 = AddressRange(1, 1023, step=2)  # slaves 2..9: адреса значений 1,3,...,1023

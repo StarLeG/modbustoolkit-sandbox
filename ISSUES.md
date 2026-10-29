@@ -27,7 +27,7 @@
 - [ ] [P0] **TASK-101 · Async-сервер pymodbus на :5020**
   - `ModbusServerContext(single=False)`, 10 unit ID
   - Логирование старта, graceful shutdown
-- [ ] [P0] **TASK-102 · Модель карты адресов**
+- [x] [P0] **TASK-102 · Модель карты адресов**
   - Класс `SlaveMap(slave_id)` с областями `cl/di/hr/ir`
   - Диапазоны и типы из `HRIR_SPEC`
   - Валидация: чтение/запись за пределами диапазона → exception 0x02
