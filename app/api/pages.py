@@ -285,6 +285,54 @@ def _registers_body() -> str:
     )
 
 
+def _behaviors_body() -> str:
+    """Каркас «Поведений» (TASK-721): форма привязки и таблица переопределений.
+
+    Форма: slave 1..9 (slave 10 поведений не имеет), область, адрес, kind
+    (фильтруется по области: числовые — hr/ir, дискретные — cl/di), параметры
+    по kind и `locked`. Значения параметров наполняет `static/behaviors.js`
+    (PUT `/api/modbus/behaviors/{slave}/{area}/{address}`), список текущих
+    переопределений — GET `/api/modbus/behaviors?only_overrides=true`.
+    """
+    slave_options = "".join(f"<option>{slave_id}</option>" for slave_id in range(1, 10))
+    area_options = "".join(f'<option value="{area}">{area}</option>' for area in AREAS)
+    return (
+        "<h2>Поведения</h2>\n"
+        '<p class="note">Поведение задаёт, как значение регистра/бита меняется во '
+        "времени (счётчик, пила, шум…). Привязки общие для всех пользователей: "
+        "поведение, установленное вами, сразу действует для остальных. Slave 10 "
+        "поведений не имеет — его IR вычисляются (часовые пояса и Unix "
+        "timestamp).</p>\n"
+        "<p>\n"
+        f'  <label>Unit ID <select id="bh-slave">{slave_options}</select></label>\n'
+        f'  <label>Область <select id="bh-area">{area_options}</select></label>\n'
+        '  <label>Адрес <input id="bh-address" type="number" min="1" value="1"></label>\n'
+        "</p>\n"
+        "<p>\n"
+        '  <label>Поведение <select id="bh-kind"></select></label>\n'
+        '  <label><input id="bh-locked" type="checkbox"> Заблокировать '
+        "(<code>locked</code>: внешние записи игнорируются)</label>\n"
+        "</p>\n"
+        '<div id="bh-params"></div>\n'
+        "<p>\n"
+        '  <button id="bh-apply" type="button">Установить</button>\n'
+        '  <span id="bh-status" role="status"></span>\n'
+        "</p>\n"
+        "<h2>Текущие переопределения</h2>\n"
+        '<p class="note">Привязки, отличающиеся от поведений по умолчанию '
+        "(HR/CL — константа 0, IR — счётчик, DI — биты счётчика секунд).</p>\n"
+        "<p>\n"
+        '  <button id="bh-refresh" type="button">Обновить</button>\n'
+        "</p>\n"
+        '<table class="values">\n'
+        "  <thead><tr><th>Unit ID</th><th>Область</th><th>Адрес</th><th>Поведение</th>"
+        "<th>Параметры</th><th>Locked</th></tr></thead>\n"
+        '  <tbody id="bh-list"></tbody>\n'
+        "</table>\n"
+        '<script type="module" src="/static/behaviors.js"></script>'
+    )
+
+
 #: Панель «Инъекции ошибок» с кнопкой сброса (TASK-605). Обычная строка (без
 #: f-префикса): фигурные скобки JS остаются литеральными.
 _INJECTIONS_PANEL = """
@@ -361,8 +409,8 @@ def get_registers() -> HTMLResponse:
 
 @pages_router.get("/behaviors", response_class=HTMLResponse)
 def get_behaviors_page() -> HTMLResponse:
-    """Поведения (TASK-721…724) — заглушка до наполнения."""
-    return HTMLResponse(_shell("Поведения", "/behaviors", _stub_body("Поведения")))
+    """Поведения: форма привязки и таблица переопределений (TASK-721)."""
+    return HTMLResponse(_shell("Поведения", "/behaviors", _behaviors_body()))
 
 
 @pages_router.get("/timezones", response_class=HTMLResponse)
