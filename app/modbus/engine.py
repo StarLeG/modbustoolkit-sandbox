@@ -94,10 +94,29 @@ class BehaviorEngine:
         for binding, behavior in self._registry.items():
             slot = self._slots.get(binding)
             if slot is None or slot.config is not behavior:
-                generator = create_generator(behavior, binding, self, self._rng)
-                slot = _Slot(config=behavior, generator=generator, created_at=now)
+                slot = self._make_slot(binding, behavior, now)
             alive[binding] = slot
         self._slots = alive
+
+    def _make_slot(self, binding: Binding, behavior: Behavior, now: float) -> _Slot:
+        """Создать генератор; ошибка конструктора/параметров → constant 0 (инвариант 7)."""
+        slave, area, address = binding
+        try:
+            generator = create_generator(behavior, binding, self, self._rng)
+        except Exception:  # инвариант 7: ошибка поведения не роняет сервер
+            log.exception(
+                "поведение %r на slave %s %s:%s не создано → constant 0",
+                behavior.kind,
+                slave,
+                area,
+                address,
+            )
+            self._journal_failure(slave, area, address)
+            fallback = Behavior("constant", {"value": 0}, locked=behavior.locked)
+            self._registry.set(slave, area, address, fallback)
+            generator = ConstantGenerator(False if area in _BIT_AREAS else 0)
+            return _Slot(config=fallback, generator=generator, created_at=now)
+        return _Slot(config=behavior, generator=generator, created_at=now)
 
     def tick(self, now: float | None = None) -> None:
         """Один проход: обновить генераторы, записать изменившиеся значения."""
@@ -120,16 +139,7 @@ class BehaviorEngine:
             value = self._fallback(binding, slot)
         self._write(binding, slot, value)
 
-    def _fallback(self, binding: Binding, slot: _Slot) -> int | float | bool:
-        """Ошибка поведения: constant 0 + лог + журнал (инвариант 7, ADR-003 п. 4)."""
-        slave, area, address = binding
-        log.exception(
-            "поведение %r на slave %s %s:%s упало → constant 0",
-            slot.config.kind,
-            slave,
-            area,
-            address,
-        )
+    def _journal_failure(self, slave: int, area: Area, address: int) -> None:
         if self._journal is not None:
             self._journal.add(
                 JournalEntry(
@@ -140,6 +150,18 @@ class BehaviorEngine:
                     source="engine",
                 )
             )
+
+    def _fallback(self, binding: Binding, slot: _Slot) -> int | float | bool:
+        """Ошибка поведения: constant 0 + лог + журнал (инвариант 7, ADR-003 п. 4)."""
+        slave, area, address = binding
+        log.exception(
+            "поведение %r на slave %s %s:%s упало → constant 0",
+            slot.config.kind,
+            slave,
+            area,
+            address,
+        )
+        self._journal_failure(slave, area, address)
         fallback = Behavior("constant", {"value": 0}, locked=slot.config.locked)
         self._registry.set(slave, area, address, fallback)
         slot.config = fallback

@@ -183,3 +183,21 @@ def test_tick_barrier_survives_write_error(monkeypatch: pytest.MonkeyPatch) -> N
     engine.tick(now=0.0)
     engine.tick(now=1.0)
     assert engine.ticks == 2
+
+
+def test_generator_creation_failure_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ошибка конструктора генератора → constant 0 (инвариант 7)."""
+    engine, registry, maps = _make_engine()
+    registry.set(1, "hr", 5, Behavior("constant", {"value": 5}, locked=True))
+
+    def broken(*_args: object, **_kwargs: object) -> object:
+        raise ValueError("плохие параметры")
+
+    monkeypatch.setattr("app.modbus.engine.create_generator", broken)
+    engine.tick(now=0.0)
+    assert maps[1].get_registers("hr", 5, 1) == [0]
+    fallback = registry.get(1, "hr", 5)
+    assert fallback is not None
+    assert fallback.kind == "constant"
+    assert fallback.params == {"value": 0}
+    assert fallback.locked is True
