@@ -7,6 +7,8 @@
 """
 from __future__ import annotations
 
+import asyncio
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -154,3 +156,57 @@ async def test_exception_injection_target_range(config: Config) -> None:
         assert not miss_area.isError()
         miss_slave = await client.read_holding_registers(5, count=1, device_id=2)
         assert not miss_slave.isError()
+
+
+# --- TASK-602: delay-инъекции ----------------------------------------------------------
+
+
+async def test_delay_injection_slows_response_and_keeps_processing(config: Config) -> None:
+    """Ответ задерживается, но обработка штатная: запись применяется (ADR-007 п. 4)."""
+    injections = InjectionRegistry()
+    injections.add("delay", 1, delay_ms=400)
+    async with _serving(config, injections) as (client, maps):
+        started = time.monotonic()
+        response = await client.write_register(5, 0x1234, device_id=1)
+        elapsed = time.monotonic() - started
+        assert not response.isError()
+        assert elapsed >= 0.3
+        assert maps[1].get_registers("hr", 5, 1) == [0x1234]
+
+
+async def test_delay_injection_target_range(config: Config) -> None:
+    """Задерживается только окно цели; соседние адреса отвечают сразу."""
+    injections = InjectionRegistry()
+    injections.add("delay", 1, area="hr", address=5, count=1, delay_ms=500)
+    async with _serving(config, injections) as (client, _maps):
+        started = time.monotonic()
+        hit = await client.read_holding_registers(5, count=1, device_id=1)
+        assert time.monotonic() - started >= 0.4
+        assert not hit.isError()
+        started = time.monotonic()
+        miss = await client.read_holding_registers(7, count=1, device_id=1)
+        assert time.monotonic() - started < 0.4
+        assert not miss.isError()
+
+
+async def test_delay_injection_does_not_block_other_connections(config: Config) -> None:
+    """asyncio.sleep не блокирует loop: соседний клиент отвечает сразу (инвариант 6)."""
+    injections = InjectionRegistry()
+    injections.add("delay", 1, delay_ms=600)
+    async with _serving(config, injections) as (slow, _maps):
+        fast = AsyncModbusTcpClient("127.0.0.1", port=config.MODBUS_TCP_PORT)
+        assert await fast.connect()
+        try:
+            slow_task = asyncio.create_task(
+                slow.read_holding_registers(5, count=1, device_id=1)
+            )
+            await asyncio.sleep(0.05)  # медленный запрос уже обрабатывается
+            started = time.monotonic()
+            quick = await fast.read_holding_registers(5, count=1, device_id=2)
+            elapsed = time.monotonic() - started
+            assert not quick.isError()
+            assert elapsed < 0.4  # ответил, не дожидаясь медленного запроса
+            response = await slow_task
+            assert not response.isError()
+        finally:
+            fast.close()

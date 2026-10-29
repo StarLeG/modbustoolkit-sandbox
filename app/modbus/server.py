@@ -237,19 +237,28 @@ class GuardedRequestHandler(ServerRequestHandler):
             self.server_send(response, self.last_addr)  # type: ignore[no-untyped-call]
             return
         injection = self._match_injection(pdu)
-        if pdu is not None and injection is not None and injection.kind == "exception":
-            log.debug(
-                "modbus: инъекция #%s — ответ 0x%02x вместо обработки (slave %s)",
-                injection.id,
-                injection.code or 0,
-                injection.slave,
-            )
-            assert injection.code is not None  # для exception code обязателен (ADR-007 п. 3)
-            response = ExceptionResponse(pdu.function_code, injection.code)
-            response.transaction_id = pdu.transaction_id
-            response.dev_id = pdu.dev_id
-            self.server_send(response, self.last_addr)  # type: ignore[no-untyped-call]
-            return
+        if pdu is not None and injection is not None:
+            if injection.kind == "exception":
+                log.debug(
+                    "modbus: инъекция #%s — ответ 0x%02x вместо обработки (slave %s)",
+                    injection.id,
+                    injection.code or 0,
+                    injection.slave,
+                )
+                assert injection.code is not None  # для exception code обязателен (ADR-007 п. 3)
+                response = ExceptionResponse(pdu.function_code, injection.code)
+                response.transaction_id = pdu.transaction_id
+                response.dev_id = pdu.dev_id
+                self.server_send(response, self.last_addr)  # type: ignore[no-untyped-call]
+                return
+            if injection.kind == "delay":
+                log.debug(
+                    "modbus: инъекция #%s — задержка %s мс (slave %s)",
+                    injection.id,
+                    injection.delay_ms,
+                    injection.slave,
+                )
+                await asyncio.sleep((injection.delay_ms or 0) / 1000.0)  # не блокирует loop
         token = _PEER_IP.set(self._peer_ip)
         try:
             await super().handle_request()  # type: ignore[no-untyped-call]
