@@ -104,6 +104,19 @@ uv run python scripts/healthcheck.py --modbus-port 5020
 Код выхода 0 - сервер жив, 1 - проверка не прошла. Docker Compose и systemd
 используют собственные healthcheck-и (см. `docker-compose.yml` и юнит).
 
+## Бэкап конфига поведений
+
+Автосохранения нет (ADR-010): перезапуск сбрасывает всё к демо-поведениям.
+Переопределения можно выгрузить и залить обратно вручную:
+
+```bash
+uv run python scripts/backup_config.py save --file backup.json
+uv run python scripts/backup_config.py load --file backup.json
+```
+
+В файл попадают только переопределённые привязки, демо-дефолты воспроизводятся
+кодом. Значения регистров в бэкап не входят.
+
 ## Поведение под нагрузкой
 
 - Лимит Modbus-записей (`MODBUS_MAX_WRITE_PER_SEC`, по умолчанию 200 на
