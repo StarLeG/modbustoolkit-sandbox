@@ -159,3 +159,5 @@ class Behavior:
 | `WS_STATE_HZ` | `2` | частота WS-обновлений состояния |
 | `JOURNAL_SIZE` | `1000` | размер ring buffer журнала |
 | `INJECTION_MAX_TTL_S` | `300` | максимальное время жизни инъекции ошибки |
+| `WEB_HOST` | `127.0.0.1` | адрес web-слушателя (только `python -m app`) |
+| `WEB_PORT` | `8765` | TCP-порт web UI/REST/WS (только `python -m app`) |
