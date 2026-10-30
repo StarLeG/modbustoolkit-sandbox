@@ -38,7 +38,20 @@ _SUB = StateSubscription(slave=1, areas=("hr",), addresses=(1,))
 
 
 def _bus(**kwargs: object) -> WebStateBus:
+    # Тикер состояния выключен: кадры подаёт сам тест, иначе он добавляет
+    # свои и ломает подсчёт отправленного. Тесты валидации передают свой.
+    kwargs.setdefault("state_hz", 1e-6)
     return WebStateBus({1: SlaveMap(1)}, **kwargs)  # type: ignore[arg-type]
+
+
+async def _settle() -> None:
+    """Дать отложенным задачам отправки дойти до следующей точки ожидания.
+
+    Число шагов event loop у Python 3.11 и 3.14 различается: один
+    `asyncio.sleep(0)` на 3.11 не успевает провести кадр через `wait_for`,
+    поэтому тесты ждут реальное время.
+    """
+    await asyncio.sleep(0.05)
 
 
 async def test_slow_client_dropped_on_queue_overflow() -> None:
@@ -46,10 +59,10 @@ async def test_slow_client_dropped_on_queue_overflow() -> None:
     slow_ws = SlowWS()
     slow = bus.add_client(slow_ws, kind="state")
     bus.set_subscription(slow, _SUB)
-    await asyncio.sleep(0)  # sender забрал кадр и «завис» в send_text
+    await _settle()  # sender забрал кадр и «завис» в send_text
     for _ in range(4):
         bus.set_subscription(slow, _SUB)  # кадры копятся в очереди до переполнения
-    await asyncio.sleep(0)  # дать отключению отработать
+    await _settle()  # дать отключению отработать
     assert slow_ws.closed == [WS_CLOSE_SLOW]
     assert bus.clients == ()
 
@@ -62,12 +75,12 @@ async def test_slow_client_does_not_block_others() -> None:
     fast = bus.add_client(fast_ws, kind="state")
     bus.set_subscription(slow, _SUB)
     bus.set_subscription(fast, _SUB)
-    await asyncio.sleep(0)
+    await _settle()
     assert len(fast_ws.sent) == 1  # быстрый получил кадр, несмотря на зависшего
     for _ in range(4):
         bus.set_subscription(slow, _SUB)
         bus.set_subscription(fast, _SUB)
-        await asyncio.sleep(0)  # очередь быстрого успевает опустеть
+        await _settle()  # очередь быстрого успевает опустеть
     assert slow_ws.closed == [WS_CLOSE_SLOW]
     assert fast_ws.closed == []  # быстрый не отключён
     assert len(fast_ws.sent) == 5  # и продолжает получать кадры
@@ -89,10 +102,10 @@ async def test_drop_is_idempotent() -> None:
     slow_ws = SlowWS()
     slow = bus.add_client(slow_ws, kind="state")
     bus.set_subscription(slow, _SUB)
-    await asyncio.sleep(0)
+    await _settle()
     for _ in range(5):
         bus.set_subscription(slow, _SUB)  # несколько переполнений подряд
-    await asyncio.sleep(0)
+    await _settle()
     assert slow_ws.closed == [WS_CLOSE_SLOW]  # close ровно один раз
     assert bus.clients == ()
 
