@@ -205,7 +205,7 @@
 - [x] [P0] **TASK-902 · nginx**: проксирование HTTP+WS, отдельный stream для Modbus-порта
 - [x] [P0] **TASK-903 · systemd / healthcheck** (restart on failure)
 - [x] [P0] **TASK-904 · Метрики `/metrics`** (Prometheus, если принято в проекте)
-- [ ] [P1] **TASK-905 · Инструкция по деплою** в `docs/DEPLOY.md`
+- [x] [P1] **TASK-905 · Инструкция по деплою** в `docs/DEPLOY.md`
 - [ ] [P1] **TASK-906 · Бэкап конфига поведений** (если включаем персистентность)
 - [ ] [P2] **TASK-907 · Sentry / structured logs shipping**
 
