@@ -72,6 +72,7 @@ async def _worker(
         result.errors.append(f"client {index}: нет соединения")
         return
     device_id = 1 + (index % 9)
+    pause_until = time.perf_counter()
     try:
         while time.monotonic() < stop_at:
             started = time.perf_counter()
@@ -86,7 +87,14 @@ async def _worker(
                 result.errors.append(f"client {index} FC4/10: {clock}")
             result.latencies_ms.append((time.perf_counter() - started) * 1000)
             result.ops += 3
-            await asyncio.sleep(OP_PAUSE_S)
+            # Пасовка по perf_counter: таймеры asyncio на Windows 3.11 квантованы
+            # гранулой ~15.6 мс и под I/O-нагрузкой проваливаются, поэтому итерацию
+            # выдерживаем по честным часам, довысыпая при раннем пробуждении.
+            pause_until += OP_PAUSE_S
+            delay = pause_until - time.perf_counter()
+            while delay > 0:
+                await asyncio.sleep(delay)
+                delay = pause_until - time.perf_counter()
     finally:
         client.close()
 
