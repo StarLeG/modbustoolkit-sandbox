@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import random
 import time
 
 import pytest
@@ -112,15 +113,33 @@ def test_default_ir_counter_ticks_once_per_interval() -> None:
     assert maps[1].get_registers("ir", 1, 1) == [2]
 
 
+def test_default_di_random_bits_switch() -> None:
+    """DI 1..8 — случайные биты: значения переключаются между тиками (TASK-810)."""
+    registry = BehaviorRegistry()
+    maps: MapSet = {slave_id: SlaveMap(slave_id) for slave_id in SLAVE_SPECS}
+    engine = BehaviorEngine(registry, maps, rng=random.Random(42))
+    engine.tick(now=0.0)
+    first = maps[1].get_bits("di", 1, 8)
+    seen_change = False
+    for tick in range(1, 30):
+        engine.tick(now=tick * 0.1)
+        if maps[1].get_bits("di", 1, 8) != first:
+            seen_change = True
+            break
+    assert seen_change
+
+
 def test_default_di_counter_bits_pattern() -> None:
-    """Дефолтный DI: бит address−1 счётчика секунд."""
+    """Дефолтный DI 9..64: бит address−1 счётчика секунд."""
     engine, _registry, maps = _make_engine()
     engine.tick(now=0.0)
-    assert maps[1].get_bits("di", 1, 2) == [False, False]
-    engine.tick(now=1.0)  # 0b01
-    assert maps[1].get_bits("di", 1, 2) == [True, False]
-    engine.tick(now=2.0)  # 0b10
-    assert maps[1].get_bits("di", 1, 2) == [False, True]
+    assert maps[1].get_bits("di", 9, 2) == [False, False]  # биты 8/9 счётчика
+    engine.tick(now=1.0)  # биты 8/9 ещё 0
+    assert maps[1].get_bits("di", 9, 2) == [False, False]
+    engine.tick(now=256.0)  # 0b1_0000_0000
+    assert maps[1].get_bits("di", 9, 2) == [True, False]
+    engine.tick(now=512.0)  # 0b10_0000_0000
+    assert maps[1].get_bits("di", 9, 2) == [False, True]
 
 
 # --- start / stop ---------------------------------------------------------------------

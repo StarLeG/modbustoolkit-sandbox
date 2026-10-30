@@ -1,7 +1,7 @@
 """Модель поведения и реестр привязок (slave, area, address) → Behavior.
 
 TASK-201: модель `Behavior` (kind / params / locked) и реестр переопределений.
-TASK-205: дефолтные поведения slave 1..9 (материализация в реестр).
+TASK-205/810: дефолтные поведения slave 1..9 (материализация в реестр, ADR-009).
 TASK-241: нормализация value-параметров по формату регистра (`normalize_params`).
 Семантика движка — `docs/adr/ADR-003-behavior-engine.md`:
 
@@ -172,17 +172,25 @@ def normalize_params(behavior: Behavior, fmt: RegisterFormat) -> Behavior:
     return Behavior(behavior.kind, normalized, locked=behavior.locked)
 
 
-# --- дефолтные поведения (TASK-205, ADR-003 п. 5) --------------------------------------
+# --- дефолтные поведения (TASK-205/810, ADR-003 п. 5, ADR-009) --------------------------
 #
 # Дефолты материализуются в реестре: один экземпляр Behavior-дефолта
 # разделяется многими привязками, `set()` подменяет объект, движок замечает
 # смену по идентичности. Slave 10 исключён — его IR вычисляются (`slave10`).
+#
+# Витрина (TASK-810, ADR-009): слоты 2..12 IR каждого слейва 1..9 показывают
+# все числовые поведения, DI 1..8 переключаются случайно, последние 8 слотов HR
+# несут демо-генераторы (locked, запись даёт 0x04). Остальной HR/CL — constant 0,
+# запись разрешена (shared last-write-wins).
 
 #: CL/HR — constant 0; внешние записи разрешены (shared last-write-wins).
 _DEFAULT_CONSTANT: Behavior = Behavior("constant", {"value": 0}, locked=False)
 
-#: DI — авто-паттерн: бит address−1 счётчика секунд.
+#: DI 9..64 — авто-паттерн: бит address−1 счётчика секунд.
 _DEFAULT_COUNTER_BITS: Behavior = Behavior("counter_bits", {}, locked=True)
+
+#: DI 1..8 — случайный бит: 0↔1 на каждом тике с вероятностью 0.5 (TASK-810).
+_DEFAULT_RANDOM_BIT: Behavior = Behavior("random_bit", {"p": 0.5}, locked=True)
 
 #: IR slave 1 (UINT16): counter step=1 раз в interval_s, locked=True.
 #: max = предел формата: иначе clamp_value «залипает» на 65535.
@@ -195,25 +203,85 @@ _DEFAULT_IR_COUNTER_32: Behavior = Behavior(
     "counter", {"step": 1, "interval_s": 1, "max": 0xFFFF_FFFF}, locked=True
 )
 
+#: Витрина числовых поведений: IR-слоты 2..12 каждого слейва 1..9 (TASK-810).
+#: Слот 1 и слоты 13+ остаются счётчиком по формату.
+_IR_SHOWCASE: tuple[Behavior, ...] = (
+    Behavior("sawtooth", {"min": 0, "max": 1000, "period_s": 20.0}, locked=True),
+    Behavior("triangle", {"min": 0, "max": 1000, "period_s": 30.0}, locked=True),
+    Behavior("meander", {"min": 0, "max": 1000, "period_s": 10.0, "duty": 0.5}, locked=True),
+    Behavior("sine", {"min": 0, "max": 1000, "period_s": 40.0}, locked=True),
+    Behavior("random_uniform", {"min": 0, "max": 1000}, locked=True),
+    Behavior("random_walk", {"min": 0, "max": 1000, "step": 10}, locked=True),
+    Behavior("step", {"values": [0, 250, 500, 750, 1000], "interval_s": 2.0}, locked=True),
+    Behavior("countdown", {"start": 1000, "step": 1, "min": 0, "interval_s": 1.0}, locked=True),
+    Behavior(
+        "ramp_oneshot", {"from": 0, "to": 1000, "duration_s": 60.0, "then": "loop"}, locked=True
+    ),
+    Behavior("follow", {"source": "hr:1"}, locked=True),
+    Behavior("constant", {"value": 42}, locked=True),
+)
+
+#: Демо-поведения последних слотов HR (TASK-810): counter, пила, треугольник,
+#: меандр, синус, шум, блуждание, ступеньки. locked — запись даёт 0x04.
+_HR_DEMO: tuple[Behavior, ...] = (
+    Behavior("counter", {"step": 10, "min": 0, "max": 1000, "interval_s": 1.0}, locked=True),
+    Behavior("sawtooth", {"min": 0, "max": 500, "period_s": 15.0}, locked=True),
+    Behavior("triangle", {"min": 0, "max": 500, "period_s": 25.0}, locked=True),
+    Behavior("meander", {"min": 0, "max": 500, "period_s": 8.0, "duty": 0.25}, locked=True),
+    Behavior("sine", {"min": 0, "max": 500, "period_s": 35.0}, locked=True),
+    Behavior("random_uniform", {"min": 0, "max": 500}, locked=True),
+    Behavior("random_walk", {"min": 0, "max": 500, "step": 5}, locked=True),
+    Behavior("step", {"values": [0, 100, 200, 300, 400, 500], "interval_s": 3.0}, locked=True),
+)
+
 
 def _ir_default(fmt: RegisterFormat) -> Behavior:
     """IR-дефолт по формату: max = предел типа значения."""
     return _DEFAULT_IR_COUNTER_16 if fmt.registers_per_value == 1 else _DEFAULT_IR_COUNTER_32
 
 
-def _default_for(slave: int, area: Area) -> Behavior:
-    """Дефолт области слейва: ir — счётчик по формату, di — биты счётчика, остальное — 0."""
+def _value_slot(fmt: RegisterFormat, address: int) -> int:
+    """Номер слота значения (с 1): для 32-битных адрес 2k−1 — слот k."""
+    return address if fmt.registers_per_value == 1 else (address + 1) // 2
+
+
+def _hr_demo_bindings() -> dict[Binding, Behavior]:
+    """Демо-поведения последних len(_HR_DEMO) слотов HR каждого слейва 1..9."""
+    bindings: dict[Binding, Behavior] = {}
+    for slave, spec in SLAVE_SPECS.items():
+        if slave == 10:
+            continue
+        addresses = [
+            address
+            for rng in spec.area_ranges("hr")
+            for address in range(rng.start, rng.stop + 1, rng.step)
+        ]
+        for address, behavior in zip(addresses[-len(_HR_DEMO) :], _HR_DEMO, strict=True):
+            bindings[(slave, "hr", address)] = behavior
+    return bindings
+
+
+#: Демо-слоты HR: (slave, "hr", address) → Behavior.
+_HR_DEMO_BINDINGS: dict[Binding, Behavior] = _hr_demo_bindings()
+
+
+def _default_for(slave: int, area: Area, address: int) -> Behavior:
+    """Дефолт привязки: витрина IR/HR, случайные биты DI 1..8, остальное — 0."""
     if area == "ir":
+        slot = _value_slot(SLAVE_SPECS[slave].fmt, address)
+        if 2 <= slot < 2 + len(_IR_SHOWCASE):
+            return _IR_SHOWCASE[slot - 2]
         return _ir_default(SLAVE_SPECS[slave].fmt)
     if area == "di":
-        return _DEFAULT_COUNTER_BITS
-    return _DEFAULT_CONSTANT
+        return _DEFAULT_RANDOM_BIT if address <= 8 else _DEFAULT_COUNTER_BITS
+    demo = _HR_DEMO_BINDINGS.get((slave, area, address))
+    return demo if demo is not None else _DEFAULT_CONSTANT
 
 
 def default_behavior(slave: int, area: Area, address: int) -> Behavior:
-    """Дефолтное поведение привязки (ADR-003 п. 5); привязка валидируется."""
+    """Дефолтное поведение привязки (ADR-003 п. 5, ADR-009); привязка валидируется."""
     check_binding(slave, area, address)
-    return _default_for(slave, area)
+    return _default_for(slave, area, address)
 
 
 def _materialize_defaults() -> dict[Binding, Behavior]:
@@ -223,10 +291,9 @@ def _materialize_defaults() -> dict[Binding, Behavior]:
         if slave == 10:
             continue
         for area in AREAS:
-            behavior = _default_for(slave, area)
             for rng in spec.area_ranges(area):
                 for address in range(rng.start, rng.stop + 1, rng.step):
-                    defaults[(slave, area, address)] = behavior
+                    defaults[(slave, area, address)] = _default_for(slave, area, address)
     return defaults
 
 
@@ -278,7 +345,7 @@ class BehaviorRegistry:
         prev = self._behaviors.get(binding)
         if prev is None:
             return None
-        default = _default_for(slave, area)
+        default = _default_for(slave, area, address)
         self._behaviors[binding] = default
         return None if prev is default else prev
 
@@ -290,17 +357,16 @@ class BehaviorRegistry:
         doomed = [
             binding
             for binding, behavior in self._behaviors.items()
-            if (slave is None or binding[0] == slave)
-            and behavior is not _default_for(binding[0], binding[1])
+            if (slave is None or binding[0] == slave) and behavior is not _default_for(*binding)
         ]
         for binding in doomed:
-            self._behaviors[binding] = _default_for(binding[0], binding[1])
+            self._behaviors[binding] = _default_for(*binding)
         return len(doomed)
 
     def is_locked(self, slave: int, area: Area, address: int) -> bool:
         """True, если привязка существует и заблокирована для внешних записей.
 
-        Дефолты IR/DI — locked=True (генерируются автоматически, инвариант 2).
+        Дефолты IR/DI и демо-слоты HR — locked=True (генерируются автоматически).
         """
         behavior = self._behaviors.get((slave, area, address))
         return behavior is not None and behavior.locked

@@ -76,7 +76,18 @@ def test_restore_round_trip() -> None:
         for area, values in areas.items()
         if area in ("ir", "di")
     )
-    assert response.json() == {"restored": hr_cl, "skipped_locked": 0, "ignored": ir_di}
+    # демо-слоты HR locked (ADR-009): restore их пропускает, остальное пишет
+    locked_hr = sum(
+        1
+        for slave in range(1, 10)
+        for address in snap["slaves"][str(slave)]["hr"]
+        if services.registry.is_locked(slave, "hr", int(address))
+    )
+    assert response.json() == {
+        "restored": hr_cl - locked_hr,
+        "skipped_locked": locked_hr,
+        "ignored": ir_di,
+    }
     # slave 10 — только вычисляемый ir, restore его не пишет; слейвы 1..9 — бит-в-бит
     for slave in range(1, 10):
         assert snap2["slaves"][str(slave)] == snap["slaves"][str(slave)]

@@ -164,10 +164,10 @@ def test_registry_items_are_identity_stable() -> None:
     assert registry.get(2, "ir", 3) is behavior  # повторный get — тот же объект
     assert [b for b, _ in registry.items() if b == (2, "ir", 3)] == [(2, "ir", 3)]
     # дефолтный экземпляр разделяется соседними привязками
-    assert registry.get(2, "ir", 5) is registry.get(2, "ir", 7)
+    assert registry.get(2, "ir", 101) is registry.get(2, "ir", 103)
 
 
-# --- дефолтные поведения (TASK-205, ADR-003 п. 5) ---------------------------------------
+# --- дефолтные поведения (TASK-205/810, ADR-003 п. 5, ADR-009) --------------------------
 
 
 def _expected_binding_count() -> int:
@@ -195,7 +195,8 @@ def test_defaults_materialized_for_slaves_1_to_9() -> None:
 
 def test_default_hr_cl_constant_zero_unlocked() -> None:
     registry = BehaviorRegistry()
-    for slave, area, address in [(1, "hr", 1), (1, "cl", 64), (5, "cl", 1), (9, "hr", 1023)]:
+    # вне демо-слотов HR (ADR-009): пишется без ограничений, как и весь CL
+    for slave, area, address in [(1, "hr", 1), (1, "cl", 64), (5, "cl", 1), (9, "hr", 1007)]:
         behavior = registry.get(slave, area, address)
         assert behavior is not None
         assert behavior.kind == "constant"
@@ -216,13 +217,68 @@ def test_default_ir_counter_locked() -> None:
         assert behavior.params["max"] == (0xFFFF if slave == 1 else 0xFFFF_FFFF)
 
 
-def test_default_di_counter_bits_locked() -> None:
+def test_default_di_random_bit_then_counter_bits_locked() -> None:
+    """DI 1..8 — случайный бит (TASK-810), DI 9..64 — биты счётчика секунд."""
     registry = BehaviorRegistry()
     for slave in range(1, 10):
-        behavior = registry.get(slave, "di", 1)
-        assert behavior is not None
-        assert behavior.kind == "counter_bits"
-        assert behavior.locked is True
+        for address in range(1, 9):
+            behavior = registry.get(slave, "di", address)
+            assert behavior == Behavior("random_bit", {"p": 0.5}, locked=True)
+        for address in range(9, 65):
+            behavior = registry.get(slave, "di", address)
+            assert behavior is not None
+            assert behavior.kind == "counter_bits"
+            assert behavior.locked is True
+
+
+def test_default_ir_showcase_kinds_locked() -> None:
+    """Слоты 2..12 IR — витрина всех числовых поведений (TASK-810, ADR-009)."""
+    registry = BehaviorRegistry()
+    kinds = [
+        "sawtooth",
+        "triangle",
+        "meander",
+        "sine",
+        "random_uniform",
+        "random_walk",
+        "step",
+        "countdown",
+        "ramp_oneshot",
+        "follow",
+        "constant",
+    ]
+    for slave in range(1, 10):
+        for offset, kind in enumerate(kinds):
+            address = offset + 2 if slave == 1 else 2 * (offset + 2) - 1
+            behavior = registry.get(slave, "ir", address)
+            assert behavior is not None
+            assert behavior.kind == kind, (slave, address)
+            assert behavior.locked is True
+        tail = 13 if slave == 1 else 2 * 13 - 1  # слот 13 — снова счётчик
+        assert registry.get(slave, "ir", tail).kind == "counter"
+
+
+def test_default_hr_demo_locked_at_top_slots() -> None:
+    """Последние 8 слотов HR каждого слейва — демо-генераторы, запись блокируется."""
+    registry = BehaviorRegistry()
+    demo_kinds = [
+        "counter",
+        "sawtooth",
+        "triangle",
+        "meander",
+        "sine",
+        "random_uniform",
+        "random_walk",
+        "step",
+    ]
+    top = {1: range(1017, 1025), **{slave: range(1009, 1024, 2) for slave in range(2, 10)}}
+    for slave, addresses in top.items():
+        assert len(list(addresses)) == 8
+        for address, kind in zip(addresses, demo_kinds, strict=True):
+            behavior = registry.get(slave, "hr", address)
+            assert behavior is not None
+            assert behavior.kind == kind, (slave, address)
+            assert behavior.locked is True
 
 
 def test_default_instances_shared() -> None:
@@ -232,7 +288,10 @@ def test_default_instances_shared() -> None:
     assert registry.get(2, "ir", 1) is registry.get(9, "ir", 1023)  # 32-битные делят один
     assert registry.get(1, "ir", 1) is not registry.get(2, "ir", 1)  # 16/32 бит — разные
     assert registry.get(1, "cl", 1) is registry.get(1, "hr", 1)
-    assert registry.get(1, "di", 1) is registry.get(9, "di", 64)
+    assert registry.get(1, "di", 1) is registry.get(9, "di", 8)  # random_bit общий
+    assert registry.get(1, "di", 9) is registry.get(9, "di", 64)  # counter_bits общий
+    assert registry.get(1, "ir", 2) is registry.get(5, "ir", 3)  # слот 2 витрины общий
+    assert registry.get(1, "hr", 1017) is registry.get(2, "hr", 1009)  # демо-HR общее
 
 
 def test_default_behavior_validates_binding() -> None:

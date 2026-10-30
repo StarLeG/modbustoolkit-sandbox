@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from app.api.app import create_app
 from app.api.services import AppServices, build_services
-from app.modbus.behavior import Behavior
+from app.modbus.behavior import Behavior, default_behavior
 from app.modbus.config import Config
 from app.modbus.types import AREAS, SLAVE_SPECS
 
@@ -266,7 +266,7 @@ def test_reset_all() -> None:
     assert again.json() == {"reset": 0}  # сбрасывать больше нечего
     assert services.registry.get(1, "hr", 5).kind == "constant"
     assert services.registry.get(1, "cl", 2).kind == "constant"  # дефолт CL: constant 0
-    assert services.registry.get(4, "ir", 7).kind == "counter"
+    assert services.registry.get(4, "ir", 7) is default_behavior(4, "ir", 7)  # витрина IR
 
 
 def test_reset_per_slave() -> None:
