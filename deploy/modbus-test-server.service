@@ -1,0 +1,48 @@
+# TASK-903: systemd-юнит Modbus-TCP сервера (запуск без Docker).
+#
+# Установка (под root):
+#   useradd --system --home /opt/modbus-test-server --shell /usr/sbin/nologin modbus-test
+#   cp deploy/modbus-test-server.service /etc/systemd/system/
+#   systemctl daemon-reload && systemctl enable --now modbus-test-server
+#
+# Переменные окружения - из /etc/modbus-test-server/env
+# (скопируйте .env.example и поправьте). Секреты хранить только там.
+# Проверка живости: python3 /opt/modbus-test-server/scripts/healthcheck.py
+
+[Unit]
+Description=Modbus Test Server (modbustoolkit.electroman.by)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=modbus-test
+Group=modbus-test
+WorkingDirectory=/opt/modbus-test-server
+EnvironmentFile=-/etc/modbus-test-server/env
+ExecStart=/opt/modbus-test-server/.venv/bin/python -m app
+
+# Падение процесса (exit != 0) - перезапуск через 5 с; штатная остановка
+# (systemctl stop, SIGTERM) перезапуска не вызывает.
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=20s
+
+# Журнал событий - journald.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=modbus-test-server
+
+# Hardening: серверу ничего не нужно писать на диск (значения регистров
+# живут в памяти) и расширять привилегии.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target
