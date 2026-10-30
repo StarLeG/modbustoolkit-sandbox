@@ -68,7 +68,7 @@ def test_docs_page_limits_follow_config() -> None:
     config = replace(Config(), WEB_MAX_WRITE_PER_MIN_PER_IP=7, JOURNAL_SIZE=42)
     with _client(config) as client:
         html = client.get("/docs").text
-    assert "записей из UI в минуту на IP — 7" in html
+    assert "записей из UI в минуту на IP - 7" in html
     assert "последние 42 событий" in html
 
 

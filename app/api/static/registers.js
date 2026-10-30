@@ -154,27 +154,47 @@ function startEdit(address) {
   const cell = el("reg-cell-" + address);
   cell.classList.add("editing");  // WS-кадры не трогают ячейку до конца правки
   cell.textContent = "";
-  const input = document.createElement("input");
-  input.value = state.values.has(address) ? String(state.values.get(address)) : "";
+  let field;
+  if (state.area === "cl") {
+    // coil принимает только 0/1 - выбираем из списка
+    field = document.createElement("select");
+    for (const item of ["0", "1"]) {
+      const option = document.createElement("option");
+      option.value = item;
+      option.textContent = item;
+      field.appendChild(option);
+    }
+    field.value = state.values.get(address) ? "1" : "0";
+    field.addEventListener("change", function () {
+      saveValue(address, field.value); // выбор значения сразу пишет
+    });
+  } else {
+    field = document.createElement("input");
+    field.value = state.values.has(address) ? String(state.values.get(address)) : "";
+  }
+  field.addEventListener("click", function (event) {
+    event.stopPropagation(); // клик по полю не всплывает до ячейки
+  });
   const button = document.createElement("button");
   button.type = "button";
   button.textContent = "✓";
   button.addEventListener("mousedown", function (event) {
     event.preventDefault(); // blur не прерывает правку перед нажатием
   });
-  button.addEventListener("click", function () {
-    saveValue(address, input.value);
+  button.addEventListener("click", function (event) {
+    event.stopPropagation();
+    saveValue(address, field.value);
   });
-  input.addEventListener("keydown", function (event) {
-    if (event.key === "Enter") saveValue(address, input.value);
+  field.addEventListener("keydown", function (event) {
+    if (event.key === "Enter") saveValue(address, field.value);
     if (event.key === "Escape") renderTable();
   });
-  input.addEventListener("blur", function () {
+  field.addEventListener("blur", function () {
     renderTable(); // отмена
   });
-  cell.appendChild(input);
+  cell.appendChild(field);
   cell.appendChild(button);
-  input.focus();
+  field.focus();
 }
 
 function addressesOf(area) {
@@ -232,11 +252,12 @@ function renderTable() {
     cellValue.id = "reg-cell-" + address;
     cellValue.textContent = state.values.has(address)
       ? formatValue(state.values.get(address))
-      : "—";
+      : "-";
     if (editable()) {
       cellValue.classList.add("editable");
       cellValue.title = window.t("Нажмите, чтобы изменить (CL/HR общие, last-write-wins)");
       cellValue.addEventListener("click", function () {
+        if (cellValue.classList.contains("editing")) return; // клик по редактору не перезапускает правку
         startEdit(address);
       });
     }
