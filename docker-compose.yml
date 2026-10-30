@@ -1,0 +1,47 @@
+# TASK-901: запуск сервера в Docker.
+#
+#   docker compose up -d --build
+#
+# Все переменные окружения — из таблицы «Env» CLAUDE.md; дефолты совпадают
+# с .env.example. Docker Compose читает файл .env рядом с этим файлом,
+# поэтому переопределять можно и в нём. Секреты в код не вставлять.
+#
+# Порты наружу маппятся на те же номера, что слушает приложение, чтобы
+# одна переменная (WEB_PORT / MODBUS_TCP_PORT) меняла порт целиком.
+
+services:
+  app:
+    build: .
+    # Тег образа без номера версии: версия проекта живёт только в
+    # pyproject.toml (SemVer, глобальный CLAUDE.md) и в коде не хардкодится.
+    image: modbus-test-server
+    container_name: modbus-test-server
+    restart: unless-stopped
+    ports:
+      - "${MODBUS_TCP_PORT:-5020}:${MODBUS_TCP_PORT:-5020}"
+      - "${WEB_PORT:-8765}:${WEB_PORT:-8765}"
+    environment:
+      # Внутри контейнера слушатели обязаны быть на всех интерфейсах.
+      MODBUS_TCP_HOST: "0.0.0.0"
+      MODBUS_TCP_PORT: "${MODBUS_TCP_PORT:-5020}"
+      MODBUS_MAX_CONN_PER_IP: "${MODBUS_MAX_CONN_PER_IP:-20}"
+      MODBUS_MAX_WRITE_PER_SEC: "${MODBUS_MAX_WRITE_PER_SEC:-200}"
+      WEB_MAX_WRITE_PER_MIN_PER_IP: "${WEB_MAX_WRITE_PER_MIN_PER_IP:-50}"
+      ENGINE_TICK_MS: "${ENGINE_TICK_MS:-100}"
+      WS_STATE_HZ: "${WS_STATE_HZ:-2}"
+      JOURNAL_SIZE: "${JOURNAL_SIZE:-1000}"
+      INJECTION_MAX_TTL_S: "${INJECTION_MAX_TTL_S:-300}"
+      WEB_HOST: "0.0.0.0"
+      WEB_PORT: "${WEB_PORT:-8765}"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:${WEB_PORT:-8765}/healthz', timeout=2)",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
