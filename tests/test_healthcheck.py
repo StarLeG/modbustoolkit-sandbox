@@ -80,6 +80,7 @@ def test_unreachable_is_failure() -> None:
         capture_output=True,
         text=True,
         timeout=60,
+        check=False,
     )
     assert run.returncode == 1
     assert "FAIL" in run.stderr

@@ -6,6 +6,7 @@ import time
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
+from fastapi.responses import PlainTextResponse
 
 from app.api.configgen import PUBLIC_HOST, ConfigTarget, generate
 from app.api.models import (
@@ -41,6 +42,8 @@ from app.api.models import (
     WriteIn,
     WriteResponse,
 )
+from app.api.prometheus import MEDIA_TYPE as PROMETHEUS_MEDIA_TYPE
+from app.api.prometheus import render_prometheus
 from app.api.services import AppServices
 from app.api.state_view import area_values
 from app.modbus.behavior import (
@@ -793,3 +796,20 @@ def get_healthz() -> HealthzResponse:
     быстро и без побочных эффектов — только подтверждает, что event loop жив.
     """
     return HealthzResponse(status="ok")
+
+
+#: Метрики Prometheus — вне префикса /api/modbus, как /healthz (TASK-904).
+metrics_router = APIRouter()
+
+
+@metrics_router.get("/metrics", response_class=PlainTextResponse)
+def get_prometheus_metrics(services: ServicesDep) -> PlainTextResponse:
+    """Счётчики сервера в экспозиции Prometheus (TASK-904).
+
+    Те же данные, что `GET /api/modbus/metrics` отдаёт UI, но в текстовом
+    формате Prometheus для систем мониторинга.
+    """
+    return PlainTextResponse(
+        render_prometheus(services.metrics.snapshot()),
+        media_type=PROMETHEUS_MEDIA_TYPE,
+    )
