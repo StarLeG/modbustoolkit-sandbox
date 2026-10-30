@@ -1,0 +1,38 @@
+# TASK-902: прокси-режим - наружу только nginx (HTTP + Modbus-TCP stream).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.proxy.yml up -d --build
+#
+# Поверх docker-compose.yml: у приложения публичные порты убираются,
+# наружу смотрит nginx (WEB_PORT -> :80, MODBUS_TCP_PORT -> :5020).
+# Секреты - только через env; FORWARDED_ALLOW_IPS здесь "*" потому,
+# что app извне недоступен (только сеть compose) и единственным
+# источником X-Forwarded-For остаётся nginx.
+
+services:
+  app:
+    ports: !reset []
+    environment:
+      # Внутри сети compose приложение слушает стандартные порты:
+      # наружу в этом режиме смотрит только nginx.
+      MODBUS_TCP_PORT: "5020"
+      WEB_PORT: "8765"
+      FORWARDED_ALLOW_IPS: "${FORWARDED_ALLOW_IPS:-*}"
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: modbus-test-server-nginx
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-8765}:80"
+      - "${MODBUS_TCP_PORT:-5020}:5020"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s

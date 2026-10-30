@@ -34,12 +34,14 @@ services:
       WEB_HOST: "0.0.0.0"
       WEB_PORT: "${WEB_PORT:-8765}"
     healthcheck:
+      # Порт берётся из env контейнера (не из хостового): в proxy-режиме
+      # приложение всегда слушает 8765 внутри сети compose.
       test:
         [
           "CMD",
           "python",
           "-c",
-          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:${WEB_PORT:-8765}/healthz', timeout=2)",
+          "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ.get('WEB_PORT', '8765') + '/healthz', timeout=2)",
         ]
       interval: 30s
       timeout: 5s

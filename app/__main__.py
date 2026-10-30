@@ -20,8 +20,10 @@ from app.modbus.server import SlaveMapContext, serve
 
 WEB_HOST_ENV = "WEB_HOST"
 WEB_PORT_ENV = "WEB_PORT"
+FORWARDED_ALLOW_IPS_ENV = "FORWARDED_ALLOW_IPS"
 WEB_HOST_DEFAULT = "127.0.0.1"
 WEB_PORT_DEFAULT = "8765"
+FORWARDED_ALLOW_IPS_DEFAULT = "127.0.0.1"
 
 
 async def main() -> None:
@@ -33,6 +35,12 @@ async def main() -> None:
         create_app(services=services),
         host=os.environ.get(WEB_HOST_ENV, WEB_HOST_DEFAULT),
         port=int(os.environ.get(WEB_PORT_ENV, WEB_PORT_DEFAULT)),
+        # За обратным прокси (nginx) реальный IP клиента приходит в
+        # X-Forwarded-For; uvicorn доверяет заголовкам только от перечисленных
+        # адресов, иначе rate limiter считал бы всех клиентов одним IP.
+        forwarded_allow_ips=os.environ.get(
+            FORWARDED_ALLOW_IPS_ENV, FORWARDED_ALLOW_IPS_DEFAULT
+        ),
         log_level="info",
     )
     server = uvicorn.Server(uv_config)

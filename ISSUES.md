@@ -202,7 +202,7 @@
 ## Эпик 9 · Деплой и эксплуатация
 
 - [x] [P0] **TASK-901 · Dockerfile** (multi-stage) + `docker-compose.yml`
-- [ ] [P0] **TASK-902 · nginx**: проксирование HTTP+WS, отдельный stream для Modbus-порта
+- [x] [P0] **TASK-902 · nginx**: проксирование HTTP+WS, отдельный stream для Modbus-порта
 - [ ] [P0] **TASK-903 · systemd / healthcheck** (restart on failure)
 - [ ] [P0] **TASK-904 · Метрики `/metrics`** (Prometheus, если принято в проекте)
 - [ ] [P1] **TASK-905 · Инструкция по деплою** в `docs/DEPLOY.md`

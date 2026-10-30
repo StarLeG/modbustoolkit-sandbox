@@ -161,3 +161,4 @@ class Behavior:
 | `INJECTION_MAX_TTL_S` | `300` | максимальное время жизни инъекции ошибки |
 | `WEB_HOST` | `127.0.0.1` | адрес web-слушателя (только `python -m app`) |
 | `WEB_PORT` | `8765` | TCP-порт web UI/REST/WS (только `python -m app`) |
+| `FORWARDED_ALLOW_IPS` | `127.0.0.1` | адреса прокси, которым доверяем в `X-Forwarded-For` |
