@@ -162,3 +162,5 @@ class Behavior:
 | `WEB_HOST` | `127.0.0.1` | адрес web-слушателя (только `python -m app`) |
 | `WEB_PORT` | `8765` | TCP-порт web UI/REST/WS (только `python -m app`) |
 | `FORWARDED_ALLOW_IPS` | `127.0.0.1` | адреса прокси, которым доверяем в `X-Forwarded-For` |
+| `LOG_FORMAT` | `text` | формат логов: `text` или `json` (структурированные) |
+| `LOG_LEVEL` | `info` | уровень логов: `debug`/`info`/`warning`/`error` |

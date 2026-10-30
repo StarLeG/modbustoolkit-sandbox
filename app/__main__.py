@@ -16,18 +16,25 @@ import uvicorn
 
 from app.api.app import create_app
 from app.api.services import build_services
+from app.logging_setup import configure_logging
 from app.modbus.server import SlaveMapContext, serve
 
 WEB_HOST_ENV = "WEB_HOST"
 WEB_PORT_ENV = "WEB_PORT"
 FORWARDED_ALLOW_IPS_ENV = "FORWARDED_ALLOW_IPS"
+LOG_FORMAT_ENV = "LOG_FORMAT"
+LOG_LEVEL_ENV = "LOG_LEVEL"
 WEB_HOST_DEFAULT = "127.0.0.1"
 WEB_PORT_DEFAULT = "8765"
 FORWARDED_ALLOW_IPS_DEFAULT = "127.0.0.1"
+LOG_FORMAT_DEFAULT = "text"
+LOG_LEVEL_DEFAULT = "info"
 
 
 async def main() -> None:
     """Поднять Modbus-TCP и FastAPI на общих сервисах до сигнала остановки."""
+    log_level = os.environ.get(LOG_LEVEL_ENV, LOG_LEVEL_DEFAULT)
+    configure_logging(os.environ.get(LOG_FORMAT_ENV, LOG_FORMAT_DEFAULT), log_level)
     services = build_services()
     config = services.config
     context = SlaveMapContext(services.maps, services.write_policy)
@@ -41,7 +48,10 @@ async def main() -> None:
         forwarded_allow_ips=os.environ.get(
             FORWARDED_ALLOW_IPS_ENV, FORWARDED_ALLOW_IPS_DEFAULT
         ),
-        log_level="info",
+        log_level=log_level,
+        # uvicorn не настраивает логирование сам: общий формат (LOG_FORMAT)
+        # уже задан configure_logging, его записи идут через root-обработчик.
+        log_config=None,
     )
     server = uvicorn.Server(uv_config)
     async with serve(config, context, services.injections, services.metrics):

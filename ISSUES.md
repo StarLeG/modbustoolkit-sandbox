@@ -207,7 +207,7 @@
 - [x] [P0] **TASK-904 · Метрики `/metrics`** (Prometheus, если принято в проекте)
 - [x] [P1] **TASK-905 · Инструкция по деплою** в `docs/DEPLOY.md`
 - [x] [P1] **TASK-906 · Бэкап конфига поведений** (если включаем персистентность)
-- [ ] [P2] **TASK-907 · Sentry / structured logs shipping**
+- [x] [P2] **TASK-907 · Sentry / structured logs shipping**
 
 ---
 
