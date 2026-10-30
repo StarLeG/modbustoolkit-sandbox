@@ -33,12 +33,12 @@ function collectPayload() {
     const address = parseNumber(el("inj-address").value);
     const count = parseNumber(el("inj-count").value);
     if (!Number.isInteger(address) || address < 1) {
-      return { error: "Адрес диапазона — целое ≥ 1." };
+      return { error: window.t("Адрес диапазона - целое число от 1 и больше.") };
     }
     payload.area = el("inj-area").value;
     payload.address = address;
     if (!Number.isInteger(count) || count < 1) {
-      return { error: "Количество значений — целое ≥ 1." };
+      return { error: window.t("Количество значений - целое число от 1 и больше.") };
     }
     payload.count = count;
   }
@@ -47,7 +47,7 @@ function collectPayload() {
   } else if (payload.kind === "delay") {
     const delay = parseNumber(el("inj-delay").value);
     if (!Number.isInteger(delay) || delay < 0 || delay > 5000) {
-      return { error: "Задержка — целое 0..5000 мс." };
+      return { error: window.t("Задержка - целое число от 0 до 5000 мс.") };
     }
     payload.delay_ms = delay;
   }
@@ -55,7 +55,7 @@ function collectPayload() {
   if (ttl !== "") {
     const seconds = parseNumber(ttl);
     if (!Number.isFinite(seconds) || seconds <= 0) {
-      return { error: "TTL — положительное число секунд." };
+      return { error: window.t("TTL - положительное число секунд.") };
     }
     payload.ttl_s = seconds;
   }
@@ -63,10 +63,10 @@ function collectPayload() {
 }
 
 function targetLabel(injection) {
-  if (!injection.area) return "весь слейв";
+  if (!injection.area) return window.t("весь слейв");
   let label = injection.area + " " + injection.address;
   if (injection.count && injection.count > 1) {
-    label += " ×" + injection.count + " знач.";
+    label += " ×" + injection.count + " " + window.t("знач.");
   }
   return label;
 }
@@ -76,9 +76,9 @@ function paramsLabel(injection) {
     return "0x0" + injection.code.toString(16).toUpperCase();
   }
   if (injection.kind === "delay") {
-    return injection.delay_ms + " мс";
+    return window.t("{ms} мс", { ms: injection.delay_ms });
   }
-  return "молчание " + injection.ttl_s + " с";
+  return window.t("молчание {ttl} с", { ttl: injection.ttl_s });
 }
 
 function renderRows(items) {
@@ -103,7 +103,7 @@ function renderRows(items) {
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = "✕";
-    button.title = "Снять инъекцию #" + injection.id;
+    button.title = window.t("Снять инъекцию #{id}", { id: injection.id });
     button.addEventListener("click", () => clearInjections({ id: injection.id }));
     td.appendChild(button);
     tr.appendChild(td);
@@ -113,7 +113,7 @@ function renderRows(items) {
     const tr = document.createElement("tr");
     const td = document.createElement("td");
     td.colSpan = 8;
-    td.textContent = "Активных инъекций нет.";
+    td.textContent = window.t("Активных инъекций нет.");
     tr.appendChild(td);
     body.appendChild(tr);
   }
@@ -139,10 +139,10 @@ async function addInjection() {
   });
   const body = await response.json().catch(() => null);
   if (!response.ok) {
-    status.textContent = (body && body.detail) || "Ошибка (" + response.status + ").";
+    status.textContent = (body && body.detail) || window.t("Ошибка ({status}).", { status: response.status });
     return;
   }
-  status.textContent = "Инъекция #" + body.id + " добавлена (TTL " + body.ttl_s + " с).";
+  status.textContent = window.t("Инъекция #{id} добавлена (TTL {ttl} с).", { id: body.id, ttl: body.ttl_s });
   await loadList();
 }
 
@@ -155,8 +155,8 @@ async function clearInjections(filter) {
   });
   const body = await response.json().catch(() => null);
   status.textContent = response.ok
-    ? "Снято инъекций: " + body.cleared
-    : "Ошибка снятия (" + response.status + ").";
+    ? window.t("Снято инъекций: {count}", { count: body.cleared })
+    : window.t("Ошибка снятия ({status}).", { status: response.status });
   await loadList();
 }
 

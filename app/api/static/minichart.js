@@ -93,7 +93,7 @@ function draw() {
   const label = "slave " + current.slave + " " + current.area + " " + current.address;
   if (points.length === 0) {
     ctx.fillStyle = "#666";
-    ctx.fillText("Нет данных за " + WINDOW_S + " с: " + label, 12, 24);
+    ctx.fillText(window.t("Нет данных за {s} с: {label}", { s: WINDOW_S, label: label }), 12, 24);
     return;
   }
 
@@ -119,8 +119,8 @@ function draw() {
   ctx.font = "11px system-ui, sans-serif";
   ctx.fillText(max.toFixed(1), 4, plot.top + 10);
   ctx.fillText(min.toFixed(1), 4, plot.bottom);
-  ctx.fillText("−" + WINDOW_S + " с", plot.left, height - 8);
-  ctx.fillText("сейчас", plot.right - 38, height - 8);
+  ctx.fillText(window.t("{v} с", { v: "−" + WINDOW_S }), plot.left, height - 8);
+  ctx.fillText(window.t("сейчас"), plot.right - 38, height - 8);
 
   ctx.strokeStyle = "#1d4ed8";
   ctx.beginPath();
@@ -135,7 +135,7 @@ function draw() {
 
   ctx.fillStyle = "#1a1a1a";
   ctx.font = "12px system-ui, sans-serif";
-  ctx.fillText(label + " — " + points[points.length - 1].v, plot.left + 8, plot.top + 14);
+  ctx.fillText(label + " - " + points[points.length - 1].v, plot.left + 8, plot.top + 14);
 }
 
 function init() {

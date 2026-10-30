@@ -51,7 +51,7 @@ function render() {
     const cell = document.createElement("td");
     cell.colSpan = 5;
     cell.className = "note";
-    cell.textContent = "Список пуст — добавьте регистры кнопкой ★ в таблице выше.";
+    cell.textContent = window.t("Список пуст - добавьте регистры кнопкой ★ в таблице выше.");
     row.appendChild(cell);
     body.appendChild(row);
     return;
@@ -72,7 +72,7 @@ function render() {
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = "✕";
-    button.title = "Убрать из избранного";
+    button.title = window.t("Убрать из избранного");
     button.addEventListener("click", function () {
       removeItem(key);
     });
@@ -85,14 +85,14 @@ function render() {
 function addItem(item) {
   const key = itemKey(item);
   if (state.items.some((existing) => itemKey(existing) === key)) {
-    status("Уже в избранном: " + key);
+    status(window.t("Уже в избранном: {key}", { key: key }));
     return;
   }
   state.items.push(item);
   persist();
   render();
   reconnect();
-  status("Добавлено: " + key);
+  status(window.t("Добавлено: {key}", { key: key }));
 }
 
 function removeItem(key) {
@@ -100,7 +100,7 @@ function removeItem(key) {
   persist();
   render();
   reconnect();
-  status("Убрано: " + key);
+  status(window.t("Убрано: {key}", { key: key }));
 }
 
 function clearList() {
@@ -108,7 +108,7 @@ function clearList() {
   persist();
   render();
   reconnect();
-  status("Список очищен");
+  status(window.t("Список очищен"));
 }
 
 function applyFrame(frame) {

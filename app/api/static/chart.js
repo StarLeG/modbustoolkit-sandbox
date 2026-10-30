@@ -59,7 +59,7 @@ function draw() {
   if (visible.length === 0) {
     ctx.fillStyle = "#666";
     ctx.fillText(
-      "Нет данных: добавьте регистры ★ в избранное — график накопит значения по WS",
+      window.t("Нет данных: добавьте регистры ★ в избранное - график накопит значения по WS"),
       12,
       24
     );
@@ -90,8 +90,8 @@ function draw() {
   ctx.font = "11px system-ui, sans-serif";
   ctx.fillText(max.toFixed(1), 4, plot.top + 10);
   ctx.fillText(min.toFixed(1), 4, plot.bottom);
-  ctx.fillText("−" + state.window_s + " с", plot.left, height - 8);
-  ctx.fillText("сейчас", plot.right - 38, height - 8);
+  ctx.fillText(window.t("{v} с", { v: "−" + state.window_s }), plot.left, height - 8);
+  ctx.fillText(window.t("сейчас"), plot.right - 38, height - 8);
 
   for (const entry of visible) {
     ctx.strokeStyle = colorFor(entry.key);

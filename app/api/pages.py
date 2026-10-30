@@ -11,9 +11,10 @@ from __future__ import annotations
 import json
 from html import escape
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
+from app.api.i18n import COOKIE_NAME, Lang, lang_links, resolve_lang
 from app.api.routes import ServicesDep
 from app.modbus.config import Config
 from app.modbus.slave10 import ZONE_COUNT, zone_offset_hours
@@ -785,24 +786,28 @@ def _journal_body() -> str:
     )
 
 
-def _shell(title: str, active: str, body: str) -> str:
+def _shell(title: str, active: str, body: str, lang: Lang = "ru") -> str:
     nav = "".join(
         f'<a href="{href}" class="nav-link{" active" if href == active else ""}">{label}</a>'
         for href, label in NAV_SECTIONS
     )
     return f"""<!DOCTYPE html>
-<html lang="ru">
+<html lang="{lang}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{escape(title)} — Публичный тестовый Modbus-TCP сервер</title>
+<link rel="icon" href="/static/favicon.ico" sizes="any">
 <link rel="stylesheet" href="/static/app.css">
+<script>window.LANG = "{lang}";</script>
+<script src="/static/i18n.js"></script>
 </head>
 <body>
 <header>
 <h1>Публичный тестовый Modbus-TCP сервер</h1>
 <p class="subtitle">modbustoolkit.electroman.by</p>
 <nav>{nav}</nav>
+<p class="lang-switch">{lang_links(lang, active)}</p>
 </header>
 <main>
 <div class="banner" role="alert">
@@ -815,51 +820,60 @@ def _shell(title: str, active: str, body: str) -> str:
 """
 
 
+def _page(request: Request, title: str, active: str, body: str) -> HTMLResponse:
+    """Ответ страницы: язык из запроса, cookie запоминает выбор."""
+    lang = resolve_lang(request)
+    response = HTMLResponse(_shell(title, active, body, lang))
+    if "lang" in request.query_params:
+        response.set_cookie(COOKIE_NAME, lang, max_age=365 * 24 * 3600, samesite="lax")
+    return response
+
+
 @pages_router.get("/", response_class=HTMLResponse)
-def get_index(services: ServicesDep) -> HTMLResponse:
+def get_index(request: Request, services: ServicesDep) -> HTMLResponse:
     """Обзор: параметры подключения и таблица форматов (TASK-701)."""
     config = services.config
     body = _index_body(config.MODBUS_TCP_HOST, config.MODBUS_TCP_PORT)
-    return HTMLResponse(_shell("Обзор", "/", body))
+    return _page(request, "Обзор", "/", body)
 
 
 @pages_router.get("/registers", response_class=HTMLResponse)
-def get_registers() -> HTMLResponse:
+def get_registers(request: Request) -> HTMLResponse:
     """Карта регистров: live-таблица адресов по слейву (TASK-711…715)."""
-    return HTMLResponse(_shell("Карта регистров", "/registers", _registers_body()))
+    return _page(request, "Карта регистров", "/registers", _registers_body())
 
 
 @pages_router.get("/behaviors", response_class=HTMLResponse)
-def get_behaviors_page() -> HTMLResponse:
+def get_behaviors_page(request: Request) -> HTMLResponse:
     """Поведения: форма привязки и таблица переопределений (TASK-721)."""
-    return HTMLResponse(_shell("Поведения", "/behaviors", _behaviors_body()))
+    return _page(request, "Поведения", "/behaviors", _behaviors_body())
 
 
 @pages_router.get("/timezones", response_class=HTMLResponse)
-def get_timezones() -> HTMLResponse:
+def get_timezones(request: Request) -> HTMLResponse:
     """Часовые пояса, slave 10: 27 зон + Unix timestamp (TASK-731…732)."""
-    return HTMLResponse(_shell("Часовые пояса", "/timezones", _timezones_body()))
+    return _page(request, "Часовые пояса", "/timezones", _timezones_body())
 
 
 @pages_router.get("/injections", response_class=HTMLResponse)
-def get_injections_page() -> HTMLResponse:
+def get_injections_page(request: Request) -> HTMLResponse:
     """Инъекции ошибок: форма добавления и список активных (TASK-605, TASK-743)."""
-    return HTMLResponse(_shell("Инъекции", "/injections", _injections_body()))
+    return _page(request, "Инъекции", "/injections", _injections_body())
 
 
 @pages_router.get("/journal", response_class=HTMLResponse)
-def get_journal_page() -> HTMLResponse:
+def get_journal_page(request: Request) -> HTMLResponse:
     """Журнал событий: последние 1000 записей + live (TASK-745)."""
-    return HTMLResponse(_shell("Журнал", "/journal", _journal_body()))
+    return _page(request, "Журнал", "/journal", _journal_body())
 
 
 @pages_router.get("/tools", response_class=HTMLResponse)
-def get_tools() -> HTMLResponse:
+def get_tools(request: Request) -> HTMLResponse:
     """Инструменты наладчика: конвертер байт/слов (TASK-741) и генератор конфигов (TASK-742)."""
-    return HTMLResponse(_shell("Инструменты", "/tools", _tools_body()))
+    return _page(request, "Инструменты", "/tools", _tools_body())
 
 
 @pages_router.get("/docs", response_class=HTMLResponse)
-def get_docs(services: ServicesDep) -> HTMLResponse:
+def get_docs(request: Request, services: ServicesDep) -> HTMLResponse:
     """Документация: форматы, ограничения, многопользовательность (TASK-751)."""
-    return HTMLResponse(_shell("Документация", "/docs", _docs_body(services.config)))
+    return _page(request, "Документация", "/docs", _docs_body(services.config))

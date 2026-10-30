@@ -78,12 +78,12 @@ async function load() {
   const status = el("journal-status");
   const response = await fetch("/api/modbus/journal?limit=" + LIMIT);
   if (!response.ok) {
-    status.textContent = "Ошибка загрузки (" + response.status + ").";
+    status.textContent = window.t("Ошибка загрузки ({status}).", { status: response.status });
     return;
   }
   const body = await response.json();
   renderAll(body.items);
-  status.textContent = "Записей в буфере: " + body.total + ".";
+  status.textContent = window.t("Записей в буфере: {count}.", { count: body.total });
 }
 
 let attempt = 0;
@@ -93,7 +93,7 @@ function connect() {
   const ws = new WebSocket(scheme + location.host + "/ws/events");
   ws.onopen = () => {
     attempt = 0;
-    el("journal-status").textContent = "Live подключён (/ws/events).";
+    el("journal-status").textContent = window.t("Live подключён (/ws/events).");
   };
   ws.onmessage = (message) => {
     const frame = JSON.parse(message.data);
@@ -103,7 +103,7 @@ function connect() {
     // Backoff по ADR-005: min(1000 * 2^attempt, 15000)
     const delay = Math.min(1000 * 2 ** attempt, 15000);
     attempt += 1;
-    el("journal-status").textContent = "Переподключение /ws/events…";
+    el("journal-status").textContent = window.t("Переподключение /ws/events…");
     setTimeout(connect, delay);
   };
 }

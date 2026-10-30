@@ -10,7 +10,7 @@ const RECONNECT_MAX_MS = 15000;
 
 const MODE_LABELS = {
   dec: "DEC",
-  signed: "DEC (знаковый)",
+  signed: window.t("DEC (знаковый)"),
   hex: "HEX",
   float: "FLOAT",
   bit: "0/1",
@@ -114,7 +114,7 @@ async function saveValue(address, raw) {
   } else {
     value = Number(trimmed);
     if (Number.isNaN(value)) {
-      showError("Не число: " + trimmed);
+      showError(window.t("Не число: {text}", { text: trimmed }));
       renderTable();
       return;
     }
@@ -133,7 +133,10 @@ async function saveValue(address, raw) {
     const body = await response.json();
     if (!response.ok) {
       showError(
-        "Запись отклонена (" + response.status + "): " + (body.detail || response.statusText)
+        window.t("Запись отклонена ({status}): {detail}", {
+          status: response.status,
+          detail: body.detail || response.statusText,
+        })
       );
       renderTable();
       return;
@@ -142,7 +145,7 @@ async function saveValue(address, raw) {
     state.values.set(address, body.value);
     renderTable();
   } catch (error) {
-    showError("Ошибка записи: " + error);
+    showError(window.t("Ошибка записи: {error}", { error: error }));
     renderTable();
   }
 }
@@ -201,7 +204,7 @@ function renderAreas() {
   }
   state.area = available.includes(state.area) ? state.area : available[0];
   select.value = state.area;
-  el("reg-fmt").textContent = "Формат: " + spec().fmt;
+  el("reg-fmt").textContent = window.t("Формат: {fmt}", { fmt: spec().fmt });
 }
 
 function renderFormats() {
@@ -232,7 +235,7 @@ function renderTable() {
       : "—";
     if (editable()) {
       cellValue.classList.add("editable");
-      cellValue.title = "Нажмите, чтобы изменить (CL/HR общие, last-write-wins)";
+      cellValue.title = window.t("Нажмите, чтобы изменить (CL/HR общие, last-write-wins)");
       cellValue.addEventListener("click", function () {
         startEdit(address);
       });
@@ -241,7 +244,7 @@ function renderTable() {
     const star = document.createElement("button");
     star.type = "button";
     star.textContent = "★";
-    star.title = "В избранное";
+    star.title = window.t("В избранное");
     star.addEventListener("click", function () {
       // событие ловит watchlist.js (TASK-714)
       document.dispatchEvent(
@@ -257,7 +260,7 @@ function renderTable() {
     body.appendChild(row);
   }
   const pages = Math.max(1, Math.ceil(state.addresses.length / PAGE_SIZE));
-  el("reg-page").textContent = "Страница " + (state.page + 1) + " из " + pages;
+  el("reg-page").textContent = window.t("Страница {page} из {pages}", { page: state.page + 1, pages: pages });
   el("reg-prev").disabled = state.page === 0;
   el("reg-next").disabled = state.page + 1 >= pages;
 }

@@ -6,7 +6,15 @@
 
 const ZONE_COUNT = 27;
 const ZONE_SLOTS = 10;
-const WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
+const WEEKDAYS = [
+  window.t("Пн"),
+  window.t("Вт"),
+  window.t("Ср"),
+  window.t("Чт"),
+  window.t("Пт"),
+  window.t("Сб"),
+  window.t("Вс"),
+];
 const RECONNECT_MAX_MS = 15000;
 
 const state = { ws: null, reconnectAttempt: 0, reconnectTimer: null, values: new Map() };
@@ -68,7 +76,7 @@ function renderClock() {
   if (unix === undefined) return;
   const delta = unix - now_s;
   const sign = delta < 0 ? "−" : "+";
-  el("tz-delta").textContent = sign + Math.abs(delta).toFixed(1) + " с";
+  el("tz-delta").textContent = window.t("{v} с", { v: sign + Math.abs(delta).toFixed(1) });
 }
 
 function applyFrame(frame) {

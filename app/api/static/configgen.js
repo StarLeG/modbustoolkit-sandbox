@@ -17,10 +17,10 @@ function collectPayload() {
   const address = parseNumber(el("cfg-address").value);
   const count = parseNumber(el("cfg-count").value);
   if (!Number.isInteger(address) || address < 1) {
-    return { error: "Адрес — целое ≥ 1 (из docs/HRIR_SPEC.md)." };
+    return { error: window.t("Адрес - целое число от 1 и больше (из docs/HRIR_SPEC.md).") };
   }
   if (!Number.isInteger(count) || count < 1) {
-    return { error: "Количество значений — целое ≥ 1." };
+    return { error: window.t("Количество значений - целое число от 1 и больше.") };
   }
   return {
     payload: {
@@ -59,22 +59,22 @@ async function generate() {
   if (!response.ok) {
     const body = await response.json().catch(() => null);
     status.textContent =
-      (body && body.detail) || "Ошибка генерации (" + response.status + ").";
+      (body && body.detail) || window.t("Ошибка генерации ({status}).", { status: response.status });
     return;
   }
   renderResult(await response.json());
-  status.textContent = "Готово: конфиг можно копировать или скачать.";
+  status.textContent = window.t("Готово: конфиг можно копировать или скачать.");
 }
 
 async function copyOutput() {
   const status = el("cfg-status");
   const content = el("cfg-output").textContent;
   if (!content) {
-    status.textContent = "Сначала сгенерируйте конфиг.";
+    status.textContent = window.t("Сначала сгенерируйте конфиг.");
     return;
   }
   await navigator.clipboard.writeText(content);
-  status.textContent = "Скопировано в буфер обмена.";
+  status.textContent = window.t("Скопировано в буфер обмена.");
 }
 
 function init() {

@@ -27,12 +27,12 @@ function collectPayload() {
   const source = el("tool-source").value;
   if (source === "value") {
     const value = parseNumber(el("tool-value").value);
-    if (!Number.isFinite(value)) return { error: "Введите значение (число или 0x…)." };
+    if (!Number.isFinite(value)) return { error: window.t("Введите значение (число или 0x…).") };
     return { payload: { kind, value } };
   }
   const regs = parseRegs();
   if (regs === null) {
-    return { error: "Введите два регистра (0..65535, можно 0x…)." };
+    return { error: window.t("Введите два регистра (от 0 до 65535, можно 0x…).") };
   }
   return { payload: { kind, regs } };
 }
@@ -75,11 +75,11 @@ async function convert() {
   if (!response.ok) {
     const body = await response.json().catch(() => null);
     status.textContent =
-      (body && body.detail) || "Ошибка конвертации (" + response.status + ").";
+      (body && body.detail) || window.t("Ошибка конвертации ({status}).", { status: response.status });
     return;
   }
   renderRows((await response.json()).rows);
-  status.textContent = "Готово: 4 порядка.";
+  status.textContent = window.t("Готово: 4 порядка.");
 }
 
 function init() {

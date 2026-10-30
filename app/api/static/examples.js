@@ -10,9 +10,9 @@ async function copyExample(event) {
   const code = el(button.dataset.copy);
   await navigator.clipboard.writeText(code.textContent);
   const status = el("example-status");
-  status.textContent = "Скопировано: " + code.id + ".";
+  status.textContent = window.t("Скопировано: {id}.", { id: code.id });
   const oldLabel = button.textContent;
-  button.textContent = "Скопировано";
+  button.textContent = window.t("Скопировано");
   setTimeout(() => {
     button.textContent = oldLabel;
   }, 1500);

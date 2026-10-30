@@ -10,13 +10,13 @@ function el(id) {
 async function readSnapshot(inputId) {
   const input = el(inputId);
   if (!input.files || input.files.length === 0) {
-    throw new Error("Выберите файл снимка: " + inputId.replace("diff-file-", "") + ".");
+    throw new Error(window.t("Выберите файл снимка: {name}.", { name: inputId.replace("diff-file-", "") }));
   }
   const text = await input.files[0].text();
   try {
     return JSON.parse(text);
   } catch (error) {
-    throw new Error("Файл не разбирается как JSON: " + error);
+    throw new Error(window.t("Файл не разбирается как JSON: {error}", { error: error }));
   }
 }
 
@@ -64,21 +64,23 @@ async function compare() {
   if (!response.ok) {
     const body = await response.json().catch(() => null);
     status.textContent =
-      (body && body.detail) || "Ошибка сравнения (" + response.status + ").";
+      (body && body.detail) || window.t("Ошибка сравнения ({status}).", { status: response.status });
     return;
   }
   const result = await response.json();
   renderRows(result.rows);
-  summary.textContent =
-    "Различий: " + result.rows.length + ", совпадений: " + result.same + ".";
-  status.textContent = "Готово.";
+  summary.textContent = window.t("Различий: {diff}, совпадений: {same}.", {
+    diff: result.rows.length,
+    same: result.same,
+  });
+  status.textContent = window.t("Готово.");
 }
 
 async function downloadSnapshot() {
   const status = el("diff-status");
   const response = await fetch("/api/modbus/snapshot", { method: "POST" });
   if (!response.ok) {
-    status.textContent = "Ошибка снимка (" + response.status + ").";
+    status.textContent = window.t("Ошибка снимка ({status}).", { status: response.status });
     return;
   }
   const snapshot = await response.json();
@@ -90,7 +92,7 @@ async function downloadSnapshot() {
   link.download = "snapshot-" + new Date().toISOString().replace(/[:.]/g, "-") + ".json";
   link.click();
   URL.revokeObjectURL(url);
-  status.textContent = "Снимок скачан.";
+  status.textContent = window.t("Снимок скачан.");
 }
 
 function init() {

@@ -24,113 +24,113 @@ const NUMERIC_KINDS = [
 const DISCRETE_KINDS = ["constant", "toggle", "pwm", "random_bit", "counter_bits", "follow_bit"];
 
 const KIND_LABELS = {
-  constant: "константа",
-  counter: "счётчик",
-  sawtooth: "пила",
-  triangle: "треугольник",
-  meander: "меандр",
-  sine: "синус",
-  random_uniform: "равномерный шум",
-  random_walk: "блуждание",
-  ramp_oneshot: "переход (ramp)",
-  countdown: "обратный отсчёт",
-  step: "ступеньки",
-  follow: "копия регистра",
-  toggle: "переключение",
-  pwm: "ШИМ (скважность)",
-  random_bit: "случайный бит",
-  counter_bits: "биты счётчика секунд",
-  follow_bit: "копия бита",
+  constant: window.t("константа"),
+  counter: window.t("счётчик"),
+  sawtooth: window.t("пила"),
+  triangle: window.t("треугольник"),
+  meander: window.t("меандр"),
+  sine: window.t("синус"),
+  random_uniform: window.t("равномерный шум"),
+  random_walk: window.t("блуждание"),
+  ramp_oneshot: window.t("переход (ramp)"),
+  countdown: window.t("обратный отсчёт"),
+  step: window.t("ступеньки"),
+  follow: window.t("копия регистра"),
+  toggle: window.t("переключение"),
+  pwm: window.t("ШИМ (скважность)"),
+  random_bit: window.t("случайный бит"),
+  counter_bits: window.t("биты счётчика секунд"),
+  follow_bit: window.t("копия бита"),
 };
 
 // Поля параметров kind'ов: name — имя параметра API, type — number/bool/text,
 // def — значение по умолчанию (как в generators.py), optional — пустое поле
 // не отправляется (сервер берёт дефолт; нужно для counter_bits: bit = address−1).
 const PARAM_SPECS = {
-  constant: [{ name: "value", label: "Значение", type: "number", def: 0 }],
+  constant: [{ name: "value", label: window.t("Значение"), type: "number", def: 0 }],
   counter: [
-    { name: "start", label: "Старт", type: "number", def: 0 },
-    { name: "step", label: "Шаг", type: "number", def: 1 },
-    { name: "min", label: "Минимум", type: "number", def: 0 },
-    { name: "max", label: "Максимум", type: "number", def: 4294967295 },
-    { name: "wrap", label: "Цикл (wrap)", type: "bool", def: true },
-    { name: "interval_s", label: "Период шага, с", type: "number", def: 1 },
+    { name: "start", label: window.t("Старт"), type: "number", def: 0 },
+    { name: "step", label: window.t("Шаг"), type: "number", def: 1 },
+    { name: "min", label: window.t("Минимум"), type: "number", def: 0 },
+    { name: "max", label: window.t("Максимум"), type: "number", def: 4294967295 },
+    { name: "wrap", label: window.t("Цикл (wrap)"), type: "bool", def: true },
+    { name: "interval_s", label: window.t("Период шага, с"), type: "number", def: 1 },
   ],
   sawtooth: [
-    { name: "min", label: "Минимум", type: "number", def: 0 },
-    { name: "max", label: "Максимум", type: "number", def: 100 },
-    { name: "period_s", label: "Период, с", type: "number", def: 10 },
-    { name: "phase", label: "Фаза (доля периода)", type: "number", def: 0 },
+    { name: "min", label: window.t("Минимум"), type: "number", def: 0 },
+    { name: "max", label: window.t("Максимум"), type: "number", def: 100 },
+    { name: "period_s", label: window.t("Период, с"), type: "number", def: 10 },
+    { name: "phase", label: window.t("Фаза (доля периода)"), type: "number", def: 0 },
   ],
   triangle: [
-    { name: "min", label: "Минимум", type: "number", def: 0 },
-    { name: "max", label: "Максимум", type: "number", def: 100 },
-    { name: "period_s", label: "Период, с", type: "number", def: 10 },
-    { name: "phase", label: "Фаза (доля периода)", type: "number", def: 0 },
+    { name: "min", label: window.t("Минимум"), type: "number", def: 0 },
+    { name: "max", label: window.t("Максимум"), type: "number", def: 100 },
+    { name: "period_s", label: window.t("Период, с"), type: "number", def: 10 },
+    { name: "phase", label: window.t("Фаза (доля периода)"), type: "number", def: 0 },
   ],
   meander: [
-    { name: "min", label: "Минимум", type: "number", def: 0 },
-    { name: "max", label: "Максимум", type: "number", def: 100 },
-    { name: "period_s", label: "Период, с", type: "number", def: 10 },
-    { name: "duty", label: "Скважность (0..1)", type: "number", def: 0.5 },
-    { name: "phase", label: "Фаза (доля периода)", type: "number", def: 0 },
+    { name: "min", label: window.t("Минимум"), type: "number", def: 0 },
+    { name: "max", label: window.t("Максимум"), type: "number", def: 100 },
+    { name: "period_s", label: window.t("Период, с"), type: "number", def: 10 },
+    { name: "duty", label: window.t("Скважность (от 0 до 1)"), type: "number", def: 0.5 },
+    { name: "phase", label: window.t("Фаза (доля периода)"), type: "number", def: 0 },
   ],
   sine: [
-    { name: "min", label: "Минимум", type: "number", def: 0 },
-    { name: "max", label: "Максимум", type: "number", def: 100 },
-    { name: "period_s", label: "Период, с", type: "number", def: 10 },
-    { name: "phase", label: "Фаза (доля периода)", type: "number", def: 0 },
+    { name: "min", label: window.t("Минимум"), type: "number", def: 0 },
+    { name: "max", label: window.t("Максимум"), type: "number", def: 100 },
+    { name: "period_s", label: window.t("Период, с"), type: "number", def: 10 },
+    { name: "phase", label: window.t("Фаза (доля периода)"), type: "number", def: 0 },
   ],
   random_uniform: [
-    { name: "min", label: "Минимум", type: "number", def: 0 },
-    { name: "max", label: "Максимум", type: "number", def: 100 },
+    { name: "min", label: window.t("Минимум"), type: "number", def: 0 },
+    { name: "max", label: window.t("Максимум"), type: "number", def: 100 },
   ],
   random_walk: [
-    { name: "min", label: "Минимум", type: "number", def: 0 },
-    { name: "max", label: "Максимум", type: "number", def: 100 },
-    { name: "step", label: "Шаг", type: "number", def: 1 },
-    { name: "mean_reversion", label: "Возврат к среднему (0..1)", type: "number", def: 0 },
+    { name: "min", label: window.t("Минимум"), type: "number", def: 0 },
+    { name: "max", label: window.t("Максимум"), type: "number", def: 100 },
+    { name: "step", label: window.t("Шаг"), type: "number", def: 1 },
+    { name: "mean_reversion", label: window.t("Возврат к среднему (от 0 до 1)"), type: "number", def: 0 },
   ],
   ramp_oneshot: [
-    { name: "from", label: "От", type: "number", def: 0 },
-    { name: "to", label: "До", type: "number", def: 100 },
-    { name: "duration_s", label: "Длительность, с", type: "number", def: 10 },
+    { name: "from", label: window.t("От"), type: "number", def: 0 },
+    { name: "to", label: window.t("До"), type: "number", def: 100 },
+    { name: "duration_s", label: window.t("Длительность, с"), type: "number", def: 10 },
     {
       name: "then",
-      label: "Дальше (hold | loop | число)",
+      label: window.t("Дальше (hold, loop или число)"),
       type: "text",
       def: "hold",
     },
   ],
   countdown: [
-    { name: "start", label: "Старт", type: "number", def: 100 },
-    { name: "step", label: "Шаг", type: "number", def: 1 },
-    { name: "min", label: "Минимум", type: "number", def: 0 },
-    { name: "interval_s", label: "Период шага, с", type: "number", def: 1 },
+    { name: "start", label: window.t("Старт"), type: "number", def: 100 },
+    { name: "step", label: window.t("Шаг"), type: "number", def: 1 },
+    { name: "min", label: window.t("Минимум"), type: "number", def: 0 },
+    { name: "interval_s", label: window.t("Период шага, с"), type: "number", def: 1 },
   ],
   step: [
-    { name: "values", label: "Значения через запятую", type: "text", def: "0, 1" },
-    { name: "interval_s", label: "Период шага, с", type: "number", def: 1 },
+    { name: "values", label: window.t("Значения через запятую"), type: "text", def: "0, 1" },
+    { name: "interval_s", label: window.t("Период шага, с"), type: "number", def: 1 },
   ],
-  follow: [{ name: "source", label: 'Источник (вида "hr:15")', type: "text", def: "hr:15" }],
-  toggle: [{ name: "period_s", label: "Период, с", type: "number", def: 1 }],
+  follow: [{ name: "source", label: window.t("Источник (вида «hr:15»)"), type: "text", def: "hr:15" }],
+  toggle: [{ name: "period_s", label: window.t("Период, с"), type: "number", def: 1 }],
   pwm: [
-    { name: "period_s", label: "Период, с", type: "number", def: 1 },
-    { name: "duty", label: "Скважность (0..1)", type: "number", def: 0.5 },
+    { name: "period_s", label: window.t("Период, с"), type: "number", def: 1 },
+    { name: "duty", label: window.t("Скважность (от 0 до 1)"), type: "number", def: 0.5 },
   ],
-  random_bit: [{ name: "p", label: "Вероятность 1 (0..1)", type: "number", def: 0.5 }],
+  random_bit: [{ name: "p", label: window.t("Вероятность 1 (от 0 до 1)"), type: "number", def: 0.5 }],
   counter_bits: [
     {
       name: "bit",
-      label: "Номер бита (пусто — адрес−1)",
+      label: window.t("Номер бита (пусто - на единицу меньше адреса)"),
       type: "number",
       def: null,
       optional: true,
     },
   ],
   follow_bit: [
-    { name: "source", label: 'Источник (вида "hr:15")', type: "text", def: "hr:15" },
-    { name: "bit", label: "Номер бита", type: "number", def: 0 },
+    { name: "source", label: window.t("Источник (вида «hr:15»)"), type: "text", def: "hr:15" },
+    { name: "bit", label: window.t("Номер бита"), type: "number", def: 0 },
   ],
 };
 
@@ -157,7 +157,7 @@ function applyPreset(name) {
   if (!preset) return;
   const area = el("bh-area").value;
   if (area !== "hr" && area !== "ir") {
-    showError("пресеты работают для областей hr/ir (для cl/di выберите поведение вручную)");
+    showError(window.t("пресеты работают для областей hr/ir (для cl/di выберите поведение вручную)"));
     return;
   }
   el("bh-kind").value = preset.kind;
@@ -168,7 +168,7 @@ function applyPreset(name) {
     if (input.type === "checkbox") input.checked = Boolean(value);
     else input.value = String(value);
   }
-  el("bh-status").textContent = "Пресет «" + name + "» загружен в форму — нажмите «Установить».";
+  el("bh-status").textContent = window.t("Пресет «{name}» загружен в форму - нажмите «Установить».", { name: name });
 }
 
 function kindsForArea(area) {
@@ -182,7 +182,7 @@ function renderKinds() {
   for (const kind of kindsForArea(el("bh-area").value)) {
     const option = document.createElement("option");
     option.value = kind;
-    option.textContent = kind + " — " + KIND_LABELS[kind];
+    option.textContent = kind + " - " + KIND_LABELS[kind];
     select.appendChild(option);
   }
   if (kindsForArea(el("bh-area").value).includes(previous)) select.value = previous;
@@ -231,13 +231,13 @@ function collectParams() {
     const raw = input.value.trim();
     if (raw === "") {
       if (spec.optional) continue;
-      showError("заполните параметр «" + spec.label + "»");
+      showError(window.t("заполните параметр «{label}»", { label: spec.label }));
       return null;
     }
     if (spec.type === "number") {
       const value = Number(raw);
       if (Number.isNaN(value)) {
-        showError("параметр «" + spec.label + "» должен быть числом");
+        showError(window.t("параметр «{label}» должен быть числом", { label: spec.label }));
         return null;
       }
       params[spec.name] = value;
@@ -249,13 +249,13 @@ function collectParams() {
       for (const part of parts) {
         const value = Number(part);
         if (Number.isNaN(value)) {
-          showError("параметр «" + spec.label + "»: «" + part + "» — не число");
+          showError(window.t("параметр «{label}»: «{part}» - не число", { label: spec.label, part: part }));
           return null;
         }
         values.push(value);
       }
       if (values.length === 0) {
-        showError("параметр «" + spec.label + "»: нужен хотя бы один элемент");
+        showError(window.t("параметр «{label}»: нужен хотя бы один элемент", { label: spec.label }));
         return null;
       }
       params[spec.name] = values;
@@ -269,7 +269,7 @@ function collectParams() {
       }
       const value = Number(raw);
       if (Number.isNaN(value)) {
-        showError("параметр «" + spec.label + "»: hold, loop или число");
+        showError(window.t("параметр «{label}»: hold, loop или число", { label: spec.label }));
         return null;
       }
       params[spec.name] = value;
@@ -281,7 +281,7 @@ function collectParams() {
 }
 
 function showError(text) {
-  el("bh-status").textContent = "Ошибка: " + text;
+  el("bh-status").textContent = window.t("Ошибка: {text}", { text: text });
 }
 
 async function apply() {
@@ -293,7 +293,7 @@ async function apply() {
   const address = Number(el("bh-address").value);
   const kind = el("bh-kind").value;
   const locked = el("bh-locked").checked;
-  status.textContent = "Установка…";
+  status.textContent = window.t("Установка…");
   try {
     const response = await fetch(
       "/api/modbus/behaviors/" + slave + "/" + area + "/" + address,
@@ -305,15 +305,16 @@ async function apply() {
     );
     const body = await response.json();
     if (!response.ok) {
-      status.textContent = "Ошибка " + response.status + ": " + (body.detail || "");
+      status.textContent = window.t("Ошибка {status}: {detail}", { status: response.status, detail: body.detail || "" });
       return;
     }
-    status.textContent =
-      "Установлено: slave " + body.slave + " " + body.area + " " + body.address
-      + " → " + body.kind;
+    status.textContent = window.t(
+      "Установлено: slave {slave} {area} {address}, поведение {kind}.",
+      { slave: body.slave, area: body.area, address: body.address, kind: body.kind }
+    );
     refreshList();
   } catch (error) {
-    status.textContent = "Ошибка: " + error;
+    status.textContent = window.t("Ошибка: {text}", { text: error });
   }
 }
 
@@ -335,17 +336,17 @@ function readRange() {
   const from = Number(el("bh-address").value);
   const to = Number(el("bh-address-to").value);
   if (!Number.isInteger(from) || !Number.isInteger(to) || from < 1 || to < 1) {
-    showError("адреса диапазона — целые числа >= 1");
+    showError(window.t("адреса диапазона - целые числа от 1 и больше"));
     return null;
   }
   if (to < from) {
-    showError("«Адрес по» меньше «Адрес от»");
+    showError(window.t("«Адрес по» меньше «Адрес от»"));
     return null;
   }
   const area = el("bh-area").value;
   const addresses = rangeAddresses(area, from, to);
   if (addresses.length === 0) {
-    showError("в диапазоне " + from + ".." + to + " нет адресов области " + area);
+    showError(window.t("в диапазоне от {from} до {to} нет адресов области {area}", { from: from, to: to, area: area }));
     return null;
   }
   return { area: area, addresses: addresses };
@@ -372,7 +373,7 @@ async function applyRange() {
       locked: locked,
     };
   });
-  status.textContent = "Применение к " + items.length + " адресам…";
+  status.textContent = window.t("Применение к {count} адресам…", { count: items.length });
   try {
     const response = await fetch("/api/modbus/behaviors/batch", {
       method: "POST",
@@ -381,15 +382,16 @@ async function applyRange() {
     });
     const body = await response.json();
     if (!response.ok) {
-      status.textContent = "Ошибка " + response.status + ": " + (body.detail || "");
+      status.textContent = window.t("Ошибка {status}: {detail}", { status: response.status, detail: body.detail || "" });
       return;
     }
-    status.textContent =
-      "Применено к " + body.applied + " адресам (" + kind + ", slave "
-      + slave + " " + range.area + ").";
+    status.textContent = window.t(
+      "Применено к {count} адресам ({kind}, slave {slave} {area}).",
+      { count: body.applied, kind: kind, slave: slave, area: range.area }
+    );
     refreshList();
   } catch (error) {
-    status.textContent = "Ошибка: " + error;
+    status.textContent = window.t("Ошибка: {text}", { text: error });
   }
 }
 
@@ -403,7 +405,7 @@ async function resetRange() {
   const items = range.addresses.map(function (address) {
     return { slave: slave, area: range.area, address: address, remove: true };
   });
-  status.textContent = "Сброс " + items.length + " адресов…";
+  status.textContent = window.t("Сброс {count} адресов…", { count: items.length });
   try {
     const response = await fetch("/api/modbus/behaviors/batch", {
       method: "POST",
@@ -412,14 +414,16 @@ async function resetRange() {
     });
     const body = await response.json();
     if (!response.ok) {
-      status.textContent = "Ошибка " + response.status + ": " + (body.detail || "");
+      status.textContent = window.t("Ошибка {status}: {detail}", { status: response.status, detail: body.detail || "" });
       return;
     }
-    status.textContent =
-      "Сброшено к дефолтам: " + body.removed + " (slave " + slave + " " + range.area + ").";
+    status.textContent = window.t(
+      "Сброшено к дефолтам: {count} (slave {slave} {area}).",
+      { count: body.removed, slave: slave, area: range.area }
+    );
     refreshList();
   } catch (error) {
-    status.textContent = "Ошибка: " + error;
+    status.textContent = window.t("Ошибка: {text}", { text: error });
   }
 }
 
@@ -435,7 +439,7 @@ async function refreshList() {
       const row = document.createElement("tr");
       const cell = document.createElement("td");
       cell.colSpan = 6;
-      cell.textContent = "Переопределений нет — все приведения по умолчанию.";
+      cell.textContent = window.t("Переопределений нет - все привязки по умолчанию.");
       row.appendChild(cell);
       list.appendChild(row);
       return;
@@ -448,7 +452,7 @@ async function refreshList() {
         String(item.address),
         item.kind,
         JSON.stringify(item.params),
-        item.locked ? "да" : "нет",
+        item.locked ? window.t("да") : window.t("нет"),
       ];
       for (const value of values) {
         const cell = document.createElement("td");
