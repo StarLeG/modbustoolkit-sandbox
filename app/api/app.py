@@ -47,14 +47,46 @@ def create_app(
             if run_engine:
                 await services.engine.stop()
 
-    # Swagger/redoc — под /api/*: корневой /docs отдан странице «Документация»
-    # (ADR-008 п. 2); API-доки не конфликтуют с разделами UI.
+    # Swagger — свой роут /api/docs в pages.py (в стиле сайта, TASK-751);
+    # встроенный FastAPI-Swagger выключен, redoc остаётся под /api/redoc.
+    # Корневой /docs отдан странице «Документация» (ADR-008 п. 2).
     app = FastAPI(
-        title="modbustoolkit.electroman.by",
+        title="Modbus Sandbox API",
+        description=(
+            "REST API публичного тестового Modbus-TCP сервера MODBUS·SANDBOX "
+            "(modbustoolkit.electroman.by). Сервер бесплатно эмулирует 10 "
+            "устройств с unit ID от 1 до 10. Значения регистров живут в "
+            "памяти и общие для всех подключённых пользователей, перезапуск "
+            "сервера всё сбрасывает."
+        ),
         lifespan=lifespan,
-        docs_url="/api/docs",
+        docs_url=None,
         redoc_url="/api/redoc",
         openapi_url="/api/openapi.json",
+        openapi_tags=[
+            {
+                "name": "Поведения",
+                "description": "Генерация значений: счётчики, волны, шум и другие поведения.",
+            },
+            {
+                "name": "Значения",
+                "description": "Текущие значения слейвов, запись и проба соединения.",
+            },
+            {
+                "name": "Снимки",
+                "description": "Снимки состояния, сравнение и восстановление.",
+            },
+            {"name": "Журнал", "description": "События сервера: записи, поведения, инъекции."},
+            {
+                "name": "Инъекции",
+                "description": "Имитация сбоев устройства: ошибки, задержки, молчание.",
+            },
+            {
+                "name": "Инструменты",
+                "description": "Конвертер байт/слов и готовые конфиги для клиентских программ.",
+            },
+            {"name": "Служебное", "description": "Здоровье процесса и счётчики для мониторинга."},
+        ],
     )
     app.state.services = services
     app.include_router(router)

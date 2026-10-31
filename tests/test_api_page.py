@@ -270,3 +270,14 @@ def test_api_docs_moved_under_api() -> None:
         assert "Спецификация форматов" in html  # страница документации UI (TASK-751)
         assert "<title>Документация" in html  # не страница Swagger UI
         assert "swagger-ui" not in html
+
+
+def test_api_docs_page_wraps_swagger_in_site_shell() -> None:
+    """Swagger UI — своя страница в оболочке сайта: бренд, навигация, тёмная тема."""
+    with _client() as client:
+        html = client.get("/api/docs").text
+    assert "<title>REST API" in html
+    assert "MODBUS" in html  # бренд в шапке
+    assert 'id="swagger-ui"' in html
+    assert "/static/swagger-dark.css" in html  # оформление в стиле сайта
+    assert 'href="/"' in html  # возврат на сайт через шапку

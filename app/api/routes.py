@@ -123,7 +123,17 @@ def _injection_out(injection: Injection) -> InjectionOut:
     )
 
 
-@router.get("/behaviors", response_model=BehaviorsResponse)
+@router.get(
+    "/behaviors",
+    response_model=BehaviorsResponse,
+    tags=["Поведения"],
+    summary="Список поведений",
+    description=(
+        "Показывает поведение каждой ячейки: слейв, область и адрес. "
+        "Можно отфильтровать по слейву или области и оставить только "
+        "переопределённые вручную."
+    ),
+)
 def get_behaviors(
     services: ServicesDep,
     slave: Annotated[int | None, Query(ge=1, le=10)] = None,
@@ -151,7 +161,18 @@ def get_behaviors(
     return BehaviorsResponse(items=items, total=len(services.registry), overrides=overrides)
 
 
-@router.put("/behaviors/{slave}/{area}/{address}", response_model=BehaviorOut)
+@router.put(
+    "/behaviors/{slave}/{area}/{address}",
+    response_model=BehaviorOut,
+    tags=["Поведения"],
+    summary="Настроить поведение",
+    description=(
+        "Назначает поведение одной ячейке, например счётчик или синус "
+        "для регистра. Параметры приводятся к формату регистра, ошибка "
+        "в данных возвращает 400. Действие из интерфейса ограничено "
+        "лимитом на IP."
+    ),
+)
 def put_behavior(
     request: Request,
     body: BehaviorIn,
@@ -189,7 +210,17 @@ def put_behavior(
     return _behavior_out(stored, (slave, area, address))
 
 
-@router.post("/behaviors/batch", response_model=BatchResponse)
+@router.post(
+    "/behaviors/batch",
+    response_model=BatchResponse,
+    tags=["Поведения"],
+    summary="Настроить много сразу",
+    description=(
+        "За один запрос назначает или сбрасывает поведения нескольких "
+        "ячеек. Сначала проверяются все элементы: если хоть один неверный, "
+        "ничего не меняется и возвращается 400."
+    ),
+)
 def post_behaviors_batch(
     request: Request,
     body: BatchIn,
@@ -254,7 +285,16 @@ def post_behaviors_batch(
     return BatchResponse(applied=applied, removed=removed)
 
 
-@router.post("/behaviors/reset", response_model=ResetResponse)
+@router.post(
+    "/behaviors/reset",
+    response_model=ResetResponse,
+    tags=["Поведения"],
+    summary="Сбросить поведения",
+    description=(
+        "Привязки снова становятся дефолтными: все сразу или только "
+        "одного слейва. В ответе число сброшенных."
+    ),
+)
 def post_behaviors_reset(
     request: Request,
     body: ResetIn,
@@ -295,7 +335,17 @@ def post_behaviors_reset(
     return ResetResponse(reset=count)
 
 
-@router.get("/state", response_model=StateResponse)
+@router.get(
+    "/state",
+    response_model=StateResponse,
+    tags=["Значения"],
+    summary="Значения слейва",
+    description=(
+        "Текущие значения регистров и битов слейва, уже декодированные "
+        "по его формату. Область можно не указывать: вернутся все, "
+        "которые есть у слейва (у slave 10 это только ir)."
+    ),
+)
 def get_state(
     services: ServicesDep,
     slave: Annotated[int, Query(ge=1, le=10)],
@@ -321,7 +371,18 @@ def get_state(
     )
 
 
-@router.post("/write", response_model=WriteResponse)
+@router.post(
+    "/write",
+    response_model=WriteResponse,
+    tags=["Значения"],
+    summary="Записать значение",
+    description=(
+        "Записывает значение в coil (cl) или holding register (hr), "
+        "как это делает редактор в интерфейсе. Запись в закрытый регистр "
+        "отклоняется с кодом 409. Действие ограничено лимитом запросов "
+        "из интерфейса на IP."
+    ),
+)
 def post_write(
     request: Request,
     body: WriteIn,
@@ -386,7 +447,17 @@ def post_write(
     return WriteResponse(slave=body.slave, area=body.area, address=body.address, value=written)
 
 
-@router.post("/snapshot", response_model=Snapshot)
+@router.post(
+    "/snapshot",
+    response_model=Snapshot,
+    tags=["Снимки"],
+    summary="Снять снимок",
+    description=(
+        "Снимает состояние всех слейвов одним JSON-ответом. Сервер "
+        "снимки не хранит: сохраните его у себя, чтобы потом сравнить "
+        "или восстановить."
+    ),
+)
 def post_snapshot(services: ServicesDep) -> Snapshot:
     """Снять снимок состояния всех слейвов (TASK-307).
 
@@ -436,7 +507,17 @@ def _diff_snapshots(a: Snapshot, b: Snapshot) -> tuple[list[SnapshotDiffRow], in
     return rows, same
 
 
-@router.post("/snapshot/diff", response_model=SnapshotDiffResponse)
+@router.post(
+    "/snapshot/diff",
+    response_model=SnapshotDiffResponse,
+    tags=["Снимки"],
+    summary="Сравнить снимки",
+    description=(
+        "Показывает различия двух снимков, до и после: изменившиеся, "
+        "добавившиеся и пропавшие значения. Совпавшие значения в ответ "
+        "не попадают."
+    ),
+)
 def post_snapshot_diff(body: SnapshotDiffIn) -> SnapshotDiffResponse:
     """Дифф двух снимков состояния (TASK-744).
 
@@ -465,7 +546,18 @@ def post_snapshot_diff(body: SnapshotDiffIn) -> SnapshotDiffResponse:
     return SnapshotDiffResponse(rows=rows, same=same)
 
 
-@router.post("/restore", response_model=RestoreResponse)
+@router.post(
+    "/restore",
+    response_model=RestoreResponse,
+    tags=["Снимки"],
+    summary="Восстановить снимок",
+    description=(
+        "Записывает значения из снимка обратно в coils и holding "
+        "registers. Значения ir/di игнорируются, закрытые регистры "
+        "пропускаются. Снимок полностью проверяется перед записью: "
+        "любая ошибка возвращает 400 и ничего не пишется."
+    ),
+)
 def post_restore(
     request: Request,
     body: Snapshot,
@@ -553,7 +645,17 @@ def post_restore(
     return RestoreResponse(restored=restored, skipped_locked=skipped_locked, ignored=ignored)
 
 
-@router.get("/journal", response_model=JournalResponse)
+@router.get(
+    "/journal",
+    response_model=JournalResponse,
+    tags=["Журнал"],
+    summary="События журнала",
+    description=(
+        "Последние события сервера от старых к новым: записи значений, "
+        "смена поведений, инъекции и попытки записать в закрытые "
+        "регистры. Хранятся только в памяти."
+    ),
+)
 def get_journal(
     services: ServicesDep,
     limit: Annotated[int | None, Query(ge=1)] = None,
@@ -583,7 +685,16 @@ def get_journal(
     )
 
 
-@router.get("/inject", response_model=InjectionsResponse)
+@router.get(
+    "/inject",
+    response_model=InjectionsResponse,
+    tags=["Инъекции"],
+    summary="Активные инъекции",
+    description=(
+        "Список действующих инъекций ошибок с остатком времени жизни. "
+        "Истёкшие в список не попадают."
+    ),
+)
 def get_inject(services: ServicesDep) -> InjectionsResponse:
     """Активные инъекции ошибок (TASK-743).
 
@@ -596,7 +707,17 @@ def get_inject(services: ServicesDep) -> InjectionsResponse:
     )
 
 
-@router.post("/inject", response_model=InjectionOut)
+@router.post(
+    "/inject",
+    response_model=InjectionOut,
+    tags=["Инъекции"],
+    summary="Добавить инъекцию",
+    description=(
+        "Заставляет слейв отвечать кодом ошибки, задерживать ответ или "
+        "молчать: так проверяется реакция клиента на сбои. Время жизни "
+        "ограничено, дальше инъекция гаснет сама."
+    ),
+)
 def post_inject(
     request: Request,
     body: InjectionIn,
@@ -644,7 +765,16 @@ def post_inject(
     return _injection_out(injection)
 
 
-@router.post("/inject/clear", response_model=InjectClearResponse)
+@router.post(
+    "/inject/clear",
+    response_model=InjectClearResponse,
+    tags=["Инъекции"],
+    summary="Снять инъекции",
+    description=(
+        "Отключает инъекции: одну по номеру, все инъекции слейва или "
+        "все сразу. В ответе число снятых."
+    ),
+)
 def post_inject_clear(
     request: Request,
     body: InjectClearIn,
@@ -680,7 +810,18 @@ def post_inject_clear(
     return InjectClearResponse(cleared=cleared)
 
 
-@router.post("/ping", response_model=PingResponse)
+@router.post(
+    "/ping",
+    response_model=PingResponse,
+    tags=["Значения"],
+    summary="Проверить соединение",
+    description=(
+        "Сервер сам делает несколько контрольных чтений выбранного "
+        "слейва и возвращает задержки ответа (минимальная, средняя, "
+        "максимальная) и число успешных и неудачных попыток. Регистры "
+        "не меняются."
+    ),
+)
 async def post_ping(
     request: Request,
     body: PingIn,
@@ -739,7 +880,17 @@ def _finite(value: float) -> int | float | str:
     return value
 
 
-@router.post("/convert", response_model=ConvertResponse)
+@router.post(
+    "/convert",
+    response_model=ConvertResponse,
+    tags=["Инструменты"],
+    summary="Конвертировать значение",
+    description=(
+        "Переводит значение в пару регистров или пару регистров в "
+        "значение во всех четырёх порядках слов: ABCD, CDAB, BADC, "
+        "DCBA. Пересчёт использует тот же кодек, что и слейвы 2..9."
+    ),
+)
 def post_convert(body: ConvertIn) -> ConvertResponse:
     """Конвертер байт/слов: значение ↔ регистры в 4 порядках (TASK-741).
 
@@ -780,7 +931,17 @@ def post_convert(body: ConvertIn) -> ConvertResponse:
     return ConvertResponse(kind=body.kind, rows=rows)
 
 
-@router.post("/configgen", response_model=ConfigGenResponse)
+@router.post(
+    "/configgen",
+    response_model=ConfigGenResponse,
+    tags=["Инструменты"],
+    summary="Сгенерировать конфиг",
+    description=(
+        "Готовит настройки подключения к серверу для конкретного "
+        "инструмента: Modbus Poll, QModMaster, CAS Modbus Scanner, "
+        "pyModbus или Node-RED."
+    ),
+)
 def post_configgen(body: ConfigGenIn, services: ServicesDep) -> ConfigGenResponse:
     """Генератор конфигов клиентских инструментов (TASK-742).
 
@@ -804,7 +965,16 @@ def post_configgen(body: ConfigGenIn, services: ServicesDep) -> ConfigGenRespons
     return ConfigGenResponse(tool=body.tool, filename=result.filename, content=result.content)
 
 
-@router.get("/metrics", response_model=MetricsResponse)
+@router.get(
+    "/metrics",
+    response_model=MetricsResponse,
+    tags=["Служебное"],
+    summary="Счётчики сервера",
+    description=(
+        "Число активных соединений, всего запросов и ошибок, скорости "
+        "за последнее окно и время работы сервера."
+    ),
+)
 def get_metrics(services: ServicesDep) -> MetricsResponse:
     """Счётчики Modbus-сервера (TASK-703).
 
@@ -827,7 +997,13 @@ def get_metrics(services: ServicesDep) -> MetricsResponse:
 health_router = APIRouter()
 
 
-@health_router.get("/healthz", response_model=HealthzResponse)
+@health_router.get(
+    "/healthz",
+    response_model=HealthzResponse,
+    tags=["Служебное"],
+    summary="Проверка здоровья",
+    description="Простая проверка для мониторинга и балансировщика: отвечает, пока процесс жив.",
+)
 def get_healthz() -> HealthzResponse:
     """Проверка живости процесса (TASK-310).
 
@@ -841,7 +1017,13 @@ def get_healthz() -> HealthzResponse:
 metrics_router = APIRouter()
 
 
-@metrics_router.get("/metrics", response_class=PlainTextResponse)
+@metrics_router.get(
+    "/metrics",
+    response_class=PlainTextResponse,
+    tags=["Служебное"],
+    summary="Метрики Prometheus",
+    description="Те же счётчики сервера в текстовом формате Prometheus для систем мониторинга.",
+)
 def get_prometheus_metrics(services: ServicesDep) -> PlainTextResponse:
     """Счётчики сервера в экспозиции Prometheus (TASK-904).
 
