@@ -73,6 +73,16 @@ def test_diff_rejects_bad_version() -> None:
     assert "версия" in body["detail"]
 
 
+def test_diff_rejects_bad_address_keys() -> None:
+    """Нечисловой ключ адреса → 400, а не 500 (TASK-1004)."""
+    bad = {"version": 1, "slaves": {"1": {"hr": {"abc": 1}}}}
+    good = {"version": 1, "slaves": {"1": {"hr": {"1": 1}}}}
+    for a, b in ((bad, good), (good, bad)):
+        status, body = _diff(a, b)
+        assert status == 400
+        assert "некорректный адрес" in body["detail"]
+
+
 def test_diff_schema_errors() -> None:
     with _client() as client:
         response = client.post("/api/modbus/snapshot/diff", json={"a": {"slaves": []}})

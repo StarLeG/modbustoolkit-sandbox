@@ -25,6 +25,11 @@ EXCEPTION_CODES: tuple[int, ...] = (0x01, 0x02, 0x03, 0x04, 0x06)
 #: Максимальная задержка инъекции delay (TASK-602), мс.
 MAX_DELAY_MS = 5000
 
+#: Потолок одновременных активных инъекций (TASK-1004, ADR-012): флуд
+#: `POST /inject` не должен раздувать реестр. Снятие и истечение TTL
+#: освобождают слоты.
+MAX_ACTIVE_INJECTIONS = 32
+
 _KINDS: tuple[str, ...] = ("exception", "delay", "timeout")
 
 
@@ -103,17 +108,21 @@ def _check_params(
 
 
 class InjectionRegistry:
-    """Реестр инъекций: добавление, выборка, снятие, ленивый TTL."""
+    """Реестр инъекций: добавление, выборка, снятие, ленивый TTL, потолок числа."""
 
     def __init__(
         self,
         max_ttl_s: float = 300.0,
         *,
+        max_active: int = MAX_ACTIVE_INJECTIONS,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         if max_ttl_s <= 0:
             raise ValueError(f"max_ttl_s должен быть > 0, получено: {max_ttl_s}")
+        if max_active <= 0:
+            raise ValueError(f"max_active должен быть > 0, получено: {max_active}")
         self._max_ttl_s = float(max_ttl_s)
+        self._max_active = int(max_active)
         self._clock = clock
         self._injections: dict[int, Injection] = {}
         self._next_id = 1
@@ -122,6 +131,11 @@ class InjectionRegistry:
     def max_ttl_s(self) -> float:
         """Максимальное время жизни инъекции (INJECTION_MAX_TTL_S)."""
         return self._max_ttl_s
+
+    @property
+    def max_active(self) -> int:
+        """Потолок одновременных активных инъекций (MAX_ACTIVE_INJECTIONS)."""
+        return self._max_active
 
     def add(
         self,
@@ -138,11 +152,18 @@ class InjectionRegistry:
         """Создать инъекцию; `ttl_s` ограничивается `max_ttl_s` (ADR-004 п. 6).
 
         Без `ttl_s` — максимальное время жизни. Для `kind="timeout"` `ttl_s` —
-        это и есть длительность молчания.
+        это и есть длительность молчания. Не больше `max_active` одновременных
+        инъекций (TASK-1004): истёкшие слоты не занимают, при переполнении —
+        ValueError (400 в REST).
         """
         _check_params(kind, slave, area, address, count, code, delay_ms)
         if ttl_s is not None and ttl_s <= 0:
             raise ValueError(f"ttl_s должен быть > 0, получено: {ttl_s}")
+        self._purge()  # истёкшие не занимают слоты потолка
+        if len(self._injections) >= self._max_active:
+            raise ValueError(
+                f"слишком много активных инъекций: максимум {self._max_active}"
+            )
         ttl = self._max_ttl_s if ttl_s is None else min(float(ttl_s), self._max_ttl_s)
         now = self._clock()
         injection = Injection(

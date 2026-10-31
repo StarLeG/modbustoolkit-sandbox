@@ -62,10 +62,19 @@ class BatchItem(BaseModel):
     remove: bool = False
 
 
-class BatchIn(BaseModel):
-    """Пакет установки/сброса поведений; применяется атомарно (TASK-303)."""
+#: Потолок элементов пакета (TASK-1004, ADR-012): UI шлёт диапазон целиком
+#: (до 1024 адресов области), остальное — запас для API-сценариев. Крупные
+#: пакеты дробятся на несколько запросов.
+MAX_BATCH_ITEMS = 2048
 
-    items: list[BatchItem]
+
+class BatchIn(BaseModel):
+    """Пакет установки/сброса поведений; применяется атомарно (TASK-303).
+
+    Не больше `MAX_BATCH_ITEMS` элементов (422 при переполнении).
+    """
+
+    items: list[BatchItem] = Field(max_length=MAX_BATCH_ITEMS)
 
 
 class BatchResponse(BaseModel):

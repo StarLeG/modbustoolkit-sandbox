@@ -76,6 +76,22 @@ def _client_ip(request: Request) -> str | None:
     return request.client.host if request.client else None
 
 
+def _ui_action_ip(request: Request, services: AppServices) -> str:
+    """Rate-limit мутирующих действий из UI: `WEB_MAX_WRITE_PER_MIN_PER_IP`.
+
+    Общий бюджет на IP с `POST /write` и `POST /ping` (ADR-004 п. 4): любые
+    изменения из UI (поведения, снимки, инъекции) считаются одним окном
+    (TASK-1004, ADR-012). Превышение → 429. Возвращает IP для журнала.
+    """
+    ip = _client_ip(request) or ""
+    if not services.write_limiter.allow(ip):
+        raise HTTPException(
+            status_code=429,
+            detail="слишком много изменений из UI, повторите позже",
+        )
+    return ip
+
+
 def _behavior_out(behavior: Behavior, binding: Binding) -> BehaviorOut:
     slave, area, address = binding
     return BehaviorOut(
@@ -147,9 +163,11 @@ def put_behavior(
     """Установить поведение привязки (TASK-302).
 
     Возвращает поведение после нормализации value-параметров по формату
-    регистра. Ошибки привязки/kind → 400 (ADR-004 п. 5); запись в журнал —
-    `behavior_set` c `source="web"`.
+    регистра. Ошибки привязки/kind → 400 (ADR-004 п. 5); действие из UI
+    лимитируется общим `WEB_MAX_WRITE_PER_MIN_PER_IP` (429, TASK-1004).
+    Запись в журнал — `behavior_set` c `source="web"`.
     """
+    ip = _ui_action_ip(request, services)
     try:
         behavior = Behavior(body.kind, body.params, locked=body.locked)  # type: ignore[arg-type]
         services.registry.set(slave, area, address, behavior)
@@ -165,7 +183,7 @@ def put_behavior(
             address=address,
             value={"kind": stored.kind, "params": stored.params, "locked": stored.locked},
             source="web",
-            ip=_client_ip(request),
+            ip=ip,
         )
     )
     return _behavior_out(stored, (slave, area, address))
@@ -181,9 +199,12 @@ def post_behaviors_batch(
 
     Атомарность: сперва валидируются все элементы (привязка, kind, область),
     затем применяются все. Ошибка в любом элементе → 400, ничего не применяется.
-    `remove=True` сбрасывает привязку к дефолту (ADR-003 п. 5). В журнал пишется
-    по одной записи на элемент: `behavior_set` / `behavior_reset` (`source="web"`).
+    Пакет не больше `MAX_BATCH_ITEMS` (422); действие из UI лимитируется общим
+    `WEB_MAX_WRITE_PER_MIN_PER_IP` (429, TASK-1004). `remove=True` сбрасывает
+    привязку к дефолту (ADR-003 п. 5). В журнал пишется по одной записи на
+    элемент: `behavior_set` / `behavior_reset` (`source="web"`).
     """
+    ip = _ui_action_ip(request, services)
     prepared: list[tuple[Binding, Behavior | None]] = []
     for index, item in enumerate(body.items):
         binding: Binding = (item.slave, item.area, item.address)
@@ -203,7 +224,6 @@ def post_behaviors_batch(
         except (ValueError, TypeError) as exc:
             raise HTTPException(status_code=400, detail=f"элемент {index}: {exc}") from exc
 
-    ip = _client_ip(request)
     applied = 0
     removed = 0
     for binding, new_behavior in prepared:
@@ -244,8 +264,11 @@ def post_behaviors_reset(
 
     Без `slave` — все переопределения, с `slave` — одного слейва. Возвращает
     число сброшенных (дефолтные привязки не считаются). Slave 10 поведений не
-    имеет → 400. В журнал пишется `behavior_reset` по каждой сброшенной привязке.
+    имеет → 400. Действие из UI лимитируется общим `WEB_MAX_WRITE_PER_MIN_PER_IP`
+    (429, TASK-1004). В журнал пишется `behavior_reset` по каждой сброшенной
+    привязке.
     """
+    ip = _ui_action_ip(request, services)
     if body.slave == 10:
         raise HTTPException(
             status_code=400,
@@ -258,7 +281,6 @@ def post_behaviors_reset(
         and behavior is not default_behavior(*binding)
     ]
     count = services.registry.reset(body.slave)
-    ip = _client_ip(request)
     for slave, area, address in doomed:
         services.journal.add(
             JournalEntry(
@@ -308,8 +330,9 @@ def post_write(
     """Запись значения CL/HR из UI (TASK-306).
 
     Только cl (bool) и hr (число): ir/di генерируются движком (инвариант 2).
-    Rate-limit — `WEB_MAX_WRITE_PER_MIN_PER_IP` на IP (429, ADR-004 п. 4);
-    запись в locked-привязку → 409 (write_policy, ADR-003 п. 3). Значение
+    Rate-limit — общий `WEB_MAX_WRITE_PER_MIN_PER_IP` на IP со всеми
+    действиями из UI (429, ADR-004 п. 4, TASK-1004); запись в
+    locked-привязку → 409 (write_policy, ADR-003 п. 3). Значение
     приводится к формату регистра (clamp), в ответе — итог. Журнал: `write`
     (`source="web"`), отклонённые записи фиксирует политика.
     """
@@ -419,7 +442,8 @@ def post_snapshot_diff(body: SnapshotDiffIn) -> SnapshotDiffResponse:
 
     `a` — «до», `b` — «после»; в ответе только различия (изменённые,
     добавленные, пропавшие значения) и число совпавших. Чистая функция:
-    без состояния, лимитов и журнала. Версия снимка ≠ 1 → 400 (как в restore).
+    без состояния, лимитов и журнала. Версия снимка ≠ 1 → 400 (как в restore);
+    нечисловой ключ адреса → 400, а не 500 (TASK-1004).
     """
     for name, snapshot in (("a", body.a), ("b", body.b)):
         if snapshot.version != 1:
@@ -427,6 +451,16 @@ def post_snapshot_diff(body: SnapshotDiffIn) -> SnapshotDiffResponse:
                 status_code=400,
                 detail=f"неподдерживаемая версия снимка {name}: {snapshot.version}",
             )
+        for areas in snapshot.slaves.values():
+            for values in areas.values():
+                for raw_address in values:
+                    try:
+                        int(raw_address)
+                    except ValueError as exc:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"снимок {name}: некорректный адрес {raw_address!r}",
+                        ) from exc
     rows, same = _diff_snapshots(body.a, body.b)
     return SnapshotDiffResponse(rows=rows, same=same)
 
@@ -442,9 +476,11 @@ def post_restore(
     Пишутся только hr/cl: ir/di генерируются движком (инвариант 2), их
     значения в снимке игнорируются (`ignored`). Атомарно по валидации: любая
     ошибка формата/адреса → 400, ничего не пишется. Locked-привязки
-    пропускаются (write_policy, ADR-003 п. 3) — `skipped_locked`. В журнал
-    пишется `restore` по каждой записанной привязке.
+    пропускаются (write_policy, ADR-003 п. 3) — `skipped_locked`. Действие из
+    UI лимитируется общим `WEB_MAX_WRITE_PER_MIN_PER_IP` (429, TASK-1004).
+    В журнал пишется `restore` по каждой записанной привязке.
     """
+    ip = _ui_action_ip(request, services)
     if body.version != 1:
         raise HTTPException(
             status_code=400,
@@ -482,7 +518,6 @@ def post_restore(
                     )
                 prepared.append((slave, area, address, value))
 
-    ip = _client_ip(request)
     restored = 0
     skipped_locked = 0
     for slave, area, address, value in prepared:
@@ -570,9 +605,12 @@ def post_inject(
     """Зарегистрировать инъекцию ошибки (TASK-309).
 
     Инъекция попадает в реестр с ленивым TTL ≤ `INJECTION_MAX_TTL_S`
-    (ADR-004 п. 6); влияние на Modbus-запросы — Эпик 6. Ошибки параметров →
-    400. Журнал: `inject` (`source="web"`).
+    (ADR-004 п. 6); активных инъекций не больше `MAX_ACTIVE_INJECTIONS`
+    (TASK-1004). Ошибки параметров и переполнение реестра → 400. Действие из
+    UI лимитируется общим `WEB_MAX_WRITE_PER_MIN_PER_IP` (429). Журнал:
+    `inject` (`source="web"`).
     """
+    ip = _ui_action_ip(request, services)
     try:
         injection = services.injections.add(
             body.kind,
@@ -600,7 +638,7 @@ def post_inject(
                 "ttl_s": injection.ttl_s,
             },
             source="web",
-            ip=_client_ip(request),
+            ip=ip,
         )
     )
     return _injection_out(injection)
@@ -616,8 +654,10 @@ def post_inject_clear(
 
     Фильтры: `id` — конкретная инъекция, `slave` — все инъекции слейва, без
     фильтров — все. Возвращает число снятых; каждая фиксируется в журнале
-    (`inject_clear`, `source="web"`).
+    (`inject_clear`, `source="web"`). Действие из UI лимитируется общим
+    `WEB_MAX_WRITE_PER_MIN_PER_IP` (429, TASK-1004).
     """
+    ip = _ui_action_ip(request, services)
     doomed = [
         injection
         for injection in services.injections.items()
@@ -625,7 +665,6 @@ def post_inject_clear(
         and (body.slave is None or injection.slave == body.slave)
     ]
     cleared = services.injections.clear(injection_id=body.id, slave=body.slave)
-    ip = _client_ip(request)
     for injection in doomed:
         services.journal.add(
             JournalEntry(

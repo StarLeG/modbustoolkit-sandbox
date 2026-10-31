@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from app.api.app import create_app
 from app.api.services import AppServices, build_services
 from app.modbus.config import Config
+from app.modbus.injection import InjectionRegistry
 
 
 def _client(services: AppServices | None = None) -> TestClient:
@@ -139,3 +140,23 @@ def test_inject_clear_by_id() -> None:
         response = client.post("/api/modbus/inject/clear", json={"id": first["id"]})
     assert response.json() == {"cleared": 1}
     assert [inj.id for inj in services.injections.items()] == [2]
+
+
+def test_inject_active_cap_returns_400() -> None:
+    """Потолок активных инъекций: переполнение реестра → 400 (TASK-1004)."""
+    services = build_services(Config())
+    services.injections = InjectionRegistry(
+        max_ttl_s=services.injections.max_ttl_s, max_active=2
+    )
+    with _client(services) as client:
+        first = client.post("/api/modbus/inject", json={"kind": "timeout", "slave": 1})
+        second = client.post("/api/modbus/inject", json={"kind": "timeout", "slave": 2})
+        denied = client.post("/api/modbus/inject", json={"kind": "timeout", "slave": 3})
+        freed = client.post("/api/modbus/inject/clear", json={})
+        again = client.post("/api/modbus/inject", json={"kind": "timeout", "slave": 3})
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert denied.status_code == 400
+    assert "слишком много активных инъекций" in denied.json()["detail"]
+    assert freed.json() == {"cleared": 2}  # снятие освобождает слоты
+    assert again.status_code == 200

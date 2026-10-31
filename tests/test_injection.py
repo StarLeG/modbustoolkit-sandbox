@@ -1,17 +1,26 @@
 """TASK-309: реестр инъекций — app/modbus/injection.py (ADR-004 п. 6).
 
-Ленивый TTL, ограничение TTL, снятие по id/слейву/все, валидация параметров.
+Ленивый TTL, ограничение TTL, снятие по id/слейву/все, валидация параметров,
+потолок числа активных инъекций (TASK-1004).
 """
 from __future__ import annotations
 
 import pytest
 
-from app.modbus.injection import EXCEPTION_CODES, MAX_DELAY_MS, InjectionRegistry
+from app.modbus.injection import (
+    EXCEPTION_CODES,
+    MAX_ACTIVE_INJECTIONS,
+    MAX_DELAY_MS,
+    InjectionRegistry,
+)
 
 
-def _registry(max_ttl_s: float = 300.0) -> tuple[InjectionRegistry, list[float]]:
+def _registry(
+    max_ttl_s: float = 300.0,
+    max_active: int = MAX_ACTIVE_INJECTIONS,
+) -> tuple[InjectionRegistry, list[float]]:
     now = [100.0]
-    return InjectionRegistry(max_ttl_s, clock=lambda: now[0]), now
+    return InjectionRegistry(max_ttl_s, max_active=max_active, clock=lambda: now[0]), now
 
 
 def test_add_assigns_sequential_ids() -> None:
@@ -108,3 +117,42 @@ def test_valid_targets() -> None:
     assert (ranged.area, ranged.address, ranged.count) == ("hr", 1, 2)
     assert (edge.area, edge.address, edge.count) == ("ir", 300, 2)
     assert EXCEPTION_CODES == (0x01, 0x02, 0x03, 0x04, 0x06)
+
+
+# --- потолок активных инъекций (TASK-1004) -------------------------------------------------
+
+
+def test_active_cap_rejects_overflow() -> None:
+    registry, _ = _registry(max_active=2)
+    registry.add("exception", 1, code=0x02)
+    registry.add("delay", 2, delay_ms=10)
+    with pytest.raises(ValueError, match="слишком много активных инъекций"):
+        registry.add("timeout", 3)
+    assert len(registry) == 2  # отклонённая инъекция не создана
+    assert registry.max_active == 2
+
+
+def test_active_cap_reuses_expired_slots() -> None:
+    registry, now = _registry(max_active=1)
+    first = registry.add("timeout", 1, ttl_s=10)
+    with pytest.raises(ValueError, match="слишком много активных инъекций"):
+        registry.add("timeout", 2)
+    now[0] = first.expires_at  # слот освобождён ленивым TTL
+    second = registry.add("timeout", 2)
+    assert second.id == 2
+    assert len(registry) == 1
+
+
+def test_active_cap_reuses_cleared_slots() -> None:
+    registry, _ = _registry(max_active=1)
+    registry.add("exception", 1, code=0x02)
+    assert registry.clear() == 1
+    assert len(registry) == 0  # слот освобождён
+    assert registry.add("exception", 1, code=0x02).id == 2
+
+
+def test_registry_rejects_bad_limits() -> None:
+    with pytest.raises(ValueError, match="max_ttl_s"):
+        InjectionRegistry(0)
+    with pytest.raises(ValueError, match="max_active"):
+        InjectionRegistry(300.0, max_active=0)

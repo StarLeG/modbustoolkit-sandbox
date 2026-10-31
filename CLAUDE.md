@@ -154,7 +154,7 @@ class Behavior:
 | `MODBUS_TCP_PORT` | `5020` | TCP-порт Modbus (502 — опционально, если окружение позволяет) |
 | `MODBUS_MAX_CONN_PER_IP` | `20` | лимит соединений с одного IP |
 | `MODBUS_MAX_WRITE_PER_SEC` | `200` | лимит записей на соединение |
-| `WEB_MAX_WRITE_PER_MIN_PER_IP` | `50` | лимит записей из UI на IP |
+| `WEB_MAX_WRITE_PER_MIN_PER_IP` | `50` | лимит действий из UI на IP (записи, поведения, снимки, инъекции) |
 | `ENGINE_TICK_MS` | `100` | период движка поведений |
 | `WS_STATE_HZ` | `2` | частота WS-обновлений состояния |
 | `JOURNAL_SIZE` | `1000` | размер ring buffer журнала |
