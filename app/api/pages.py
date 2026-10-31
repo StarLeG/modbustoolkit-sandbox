@@ -1,7 +1,7 @@
 """HTML-страницы UI: shell + страницы разделов (Эпик 7, ADR-008).
 
 Shell - общий каркас в фирменном стиле modbustoolkit: шапка с брендом
-`MODBUS·TOOLKIT`, навигация по разделам, обязательная плашка `WARNING_BANNER`
+`MODBUS·SANDBOX`, навигация по разделам, обязательная плашка `WARNING_BANNER`
 (ADR-001 п. 4, TASK-504), блок поддержки проекта и футер с промо-ссылками на
 продукт. Тексты RU/EN идут через `t()`, язык выбирается запросом или cookie.
 Страницы рендерятся сервером (f-строки), живые данные подтягивает JS из REST
@@ -60,9 +60,6 @@ PRODUCT_URL = "https://modbustoolkit.electroman.by/"
 PRODUCT_DOCS_URL = "https://modbustoolkit.electroman.by/docs.html"
 SUPPORT_URL = "https://modbustoolkit.electroman.by/support.html"
 TELEGRAM_URL = "https://t.me/modbustoolkit"
-
-#: Публичная точка подключения, которая фигурирует в примерах.
-PUBLIC_ENDPOINT = "modbustoolkit.electroman.by:5020"
 
 
 def _project_version() -> str:
@@ -257,12 +254,16 @@ _INDEX_FMT_NOTE_EN = (
     "A 32-bit value occupies two registers (value addresses 1, 3, …, 1023)."
 )
 _INDEX_TAIL_RU = (
-    "Live-состояние регистров, настройка поведений, инъекции ошибок и журнал "
-    "живут в соседних разделах."
+    '<a href="/registers">Live-состояние регистров</a>, '
+    '<a href="/behaviors">настройка поведений</a>, '
+    '<a href="/injections">инъекции ошибок</a> и '
+    '<a href="/journal">журнал событий</a> живут в соседних разделах.'
 )
 _INDEX_TAIL_EN = (
-    "Live register state, behavior setup, error injections and the journal "
-    "live in the neighbouring sections."
+    '<a href="/registers">Live register state</a>, '
+    '<a href="/behaviors">behavior setup</a>, '
+    '<a href="/injections">error injections</a> and the '
+    '<a href="/journal">event journal</a> live in the neighbouring sections.'
 )
 
 _PROMO_RU = (
@@ -387,6 +388,223 @@ def _api_links(lang: Lang) -> str:
     )
 
 
+#: Руководство для начинающих на «Документации»: простой язык, шаги, карта разделов.
+_GUIDE_RU = (
+    "<p>Modbus Sandbox - бесплатный сервер в интернете, который притворяется "
+    "сразу десятью Modbus-устройствами. К нему подключают свой клиент - "
+    "программу, опрашивающую приборы, - и проверяют, как она читает и пишет "
+    "данные. Регистрация не нужна, всё происходит в реальном времени.</p>\n"
+    "<p>Что нужно знать перед стартом:</p>\n"
+    "<ul>\n"
+    "<li>Modbus-TCP общается через адрес и порт. У нас это "
+    "<code>modbustoolkit.electroman.by</code>, порт <code>5020</code>.</li>\n"
+    "<li>Внутри живут 10 устройств - их называют слейвами и нумеруют от 1 до "
+    "10, а номер устройства в запросе зовут unit ID.</li>\n"
+    "<li>Данные лежат в регистрах - ячейках с числами или битами. Есть четыре "
+    "области: HR (holding registers) читаются и пишутся, IR (input "
+    "registers) только читаются, CL (coils) - биты с записью, DI (discrete "
+    "inputs) - биты только для чтения.</li>\n"
+    "<li>Клиент общается с сервером функциями: 1 и 2 читают биты, 3 и 4 "
+    "читают регистры, 5 и 6 пишут одну ячейку, 16 пишет до двух регистров "
+    "сразу. Остальные функции сервер не поддерживает.</li>\n"
+    "</ul>\n"
+    "<p>Первая проверка по шагам:</p>\n"
+    "<ol>\n"
+    "<li>Откройте ModbusToolkit (или любой другой Modbus-клиент) и создайте "
+    "соединение Modbus TCP с хостом <code>modbustoolkit.electroman.by</code> "
+    "и портом <code>5020</code>.</li>\n"
+    "<li>Укажите unit ID 1 и прочитайте 10 holding registers с адреса 1 "
+    "функцией 3. В ответ придёт список чисел.</li>\n"
+    "<li>Запишите в первый регистр своё значение функцией 6 и прочитайте "
+    "снова - значение совпадёт.</li>\n"
+    "<li>Откройте раздел «Карта регистров» этого сайта и найдите тот же "
+    "адрес: вы увидите то же значение. Его видят все подключённые "
+    "пользователи, и любой может его перезаписать.</li>\n"
+    "<li>Загляните в «Поведения», чтобы назначить регистру генератор "
+    "(счётчик, пила, синус), и в «Инъекции», чтобы устроить слейву ошибку "
+    "или задержку ответа.</li>\n"
+    "</ol>\n"
+    "<p>Коротко о разделах сайта:</p>\n"
+    "<ul>\n"
+    "<li>«Обзор» - адрес, порт и форматы данных по слейвам.</li>\n"
+    "<li>«Карта регистров» - живые значения и редактирование.</li>\n"
+    "<li>«Поведения» - автоматическая генерация значений.</li>\n"
+    "<li>«Часовые пояса» - 27 зон времени и Unix timestamp слейва 10.</li>\n"
+    "<li>«Инъекции» - имитация сбоев устройства.</li>\n"
+    "<li>«Журнал» - кто и что менял.</li>\n"
+    "<li>«Инструменты» - конвертер байтов, готовые конфиги для программ и "
+    "сравнение снимков.</li>\n"
+    "</ul>\n"
+)
+_GUIDE_EN = (
+    "<p>Modbus Sandbox is a free server on the internet that pretends to be "
+    "ten Modbus devices at once. Point your client - the program that polls "
+    "field devices - at it and see how it reads and writes data. No sign-up "
+    "needed, everything happens in real time.</p>\n"
+    "<p>What to know before you start:</p>\n"
+    "<ul>\n"
+    "<li>Modbus-TCP talks over an address and a port. Ours is "
+    "<code>modbustoolkit.electroman.by</code>, port <code>5020</code>.</li>\n"
+    "<li>Inside live 10 devices - they are called slaves and numbered 1 to "
+    "10. The device number in a request is the unit ID.</li>\n"
+    "<li>Data lives in registers - cells holding numbers or bits. Four "
+    "areas: HR (holding registers) can be read and written, IR (input "
+    "registers) are read-only, CL (coils) are writable bits, DI (discrete "
+    "inputs) are read-only bits.</li>\n"
+    "<li>Clients talk to the server with functions: 1 and 2 read bits, 3 "
+    "and 4 read registers, 5 and 6 write a single cell, 16 writes up to two "
+    "registers at once. The server rejects other functions.</li>\n"
+    "</ul>\n"
+    "<p>Your first check, step by step:</p>\n"
+    "<ol>\n"
+    "<li>Open ModbusToolkit (or any other Modbus client) and create a "
+    "Modbus TCP connection to host <code>modbustoolkit.electroman.by</code> "
+    "port <code>5020</code>.</li>\n"
+    "<li>Set unit ID 1 and read 10 holding registers from address 1 with "
+    "function 3. A list of numbers comes back.</li>\n"
+    "<li>Write your own value to the first register with function 6 and "
+    "read it again - the value matches.</li>\n"
+    "<li>Open the «Register map» section of this site and find the same "
+    "address: you see the same value. Every connected user sees it too, "
+    "and anyone may overwrite it.</li>\n"
+    "<li>Look at «Behaviors» to assign a generator (counter, saw, sine) to "
+    "a register, and at «Injections» to give a slave an error or a delayed "
+    "response.</li>\n"
+    "</ol>\n"
+    "<p>A quick map of the site sections:</p>\n"
+    "<ul>\n"
+    "<li>«Overview» - address, port and data formats per slave.</li>\n"
+    "<li>«Register map» - live values and editing.</li>\n"
+    "<li>«Behaviors» - automatic value generation.</li>\n"
+    "<li>«Time zones» - 27 time zones and the Unix timestamp of slave 10.</li>\n"
+    "<li>«Injections» - faking device faults.</li>\n"
+    "<li>«Journal» - who changed what.</li>\n"
+    "<li>«Tools» - byte converter, ready configs for tools and snapshot "
+    "comparison.</li>\n"
+    "</ul>\n"
+)
+
+#: Примеры использования сервиса и ModbusToolkit для «Документации».
+_USECASES_RU = (
+    "<p>Ниже - короткие сценарии проверки клиента на живых данных, каждый "
+    "занимает несколько минут. Примеры написаны для ModbusToolkit, но "
+    "подойдёт любой Modbus-клиент. Демо-слоты заполняют себя сами, а "
+    "свободные регистры общие - их может перезаписать другой участник.</p>\n"
+    "<h4>Проверить сборку 32-битных значений (uint32 CDAB)</h4>\n"
+    "<p>Порядок слов CDAB - самая частая ошибка: старшее слово хранится "
+    "вторым. Откройте «Карту регистров», slave 3, и найдите демо-слот 1009 "
+    "или синус на слоте 1015. Прочитайте из клиента функцией 3 два регистра "
+    "с этого адреса (device_id=3), соберите из них значение так, как умеет "
+    "ваш клиент, и сверьте с тем, что показывает интерфейс. Совпало - "
+    "порядок слов у вас правильный. Затем запишите своё значение функцией 6 "
+    "в свободный регистр с адресом 1 и прочитайте обратно.</p>\n"
+    "<h4>Проверить реакцию на пропавший ответ (timeout)</h4>\n"
+    "<p>Клиент не должен зависать, когда устройство молчит. В разделе "
+    "«Инъекции» добавьте инъекцию типа timeout на slave 1 с TTL 30 секунд и "
+    "запустите в клиенте цикл чтения с тайм-аутом 1-2 секунды. Пока "
+    "инъекция жива, ответов нет: клиент обязан показать ошибку, а не висеть. "
+    "Когда TTL закончится, чтение восстановится само, без перезапуска "
+    "клиента. Полезная вариация - инъекция exception с кодом 0x06: клиент "
+    "должен корректно обработать ответ Device Busy.</p>\n"
+    "<h4>Проверить float с перевёрнутыми байтами (float DCBA)</h4>\n"
+    "<p>Порядок DCBA легко пропустить: мусорное число иногда выглядит "
+    "правдоподобно. Возьмите slave 9 и демо-слот 1015 с синусом, прочитайте "
+    "из клиента два регистра и соберите float. Затем в разделе "
+    "«Инструменты» вставьте эти же два регистра в конвертер: он покажет "
+    "значение во всех четырёх порядках. Ваше значение должно совпасть со "
+    "строкой DCBA и с живым значением слота.</p>\n"
+    "<h4>Проверить время и часовые пояса (slave 10)</h4>\n"
+    "<p>Раздел «Часовые пояса» показывает 27 зон с датой, временем и "
+    "смещением UTC, а также Unix timestamp в регистрах 300..301. Прочитайте "
+    "их из клиента и сверьте с системным временем: расхождение больше пары "
+    "секунд означает ошибку в разборе uint32 или часового пояса.</p>\n"
+)
+_USECASES_EN = (
+    "<p>Below are short client checks against live data; each takes a few "
+    "minutes. The examples use ModbusToolkit, but any Modbus client works. "
+    "Demo slots fill themselves in, and free registers are shared - another "
+    "participant may overwrite them.</p>\n"
+    "<h4>Check 32-bit value packing (uint32 CDAB)</h4>\n"
+    "<p>The CDAB word order is the most common mistake: the high word is "
+    "stored second. Open the «Register map», slave 3, and find demo slot "
+    "1009 or the sine at slot 1015. With function 3 read two registers from "
+    "that address (device_id=3), assemble the value the way your client "
+    "does, and compare it with the UI. A match means your word order is "
+    "right. Then write your own value with function 6 into the free "
+    "register at address 1 and read it back.</p>\n"
+    "<h4>Check the reaction to a missing reply (timeout)</h4>\n"
+    "<p>A client must not hang when the device goes silent. In the "
+    "«Injections» section add a timeout injection on slave 1 with a 30 s "
+    "TTL and run a read loop in your client with a 1-2 s timeout. While "
+    "the injection lives, no replies come: the client must report an error "
+    "instead of freezing. When the TTL ends, reading recovers on its own, "
+    "no client restart needed. A useful variation is an exception "
+    "injection with code 0x06: the client should handle Device Busy "
+    "properly.</p>\n"
+    "<h4>Check floats with swapped bytes (float DCBA)</h4>\n"
+    "<p>The DCBA order is easy to miss: garbage numbers can look "
+    "plausible. Take slave 9 and demo slot 1015 with the sine, read two "
+    "registers in your client and assemble a float. Then paste the same "
+    "two registers into the converter in «Tools»: it shows the value in all "
+    "four orders. Your value should match the DCBA row and the live slot "
+    "value.</p>\n"
+    "<h4>Check time and time zones (slave 10)</h4>\n"
+    "<p>The «Time zones» section shows 27 zones with date, time and UTC "
+    "offset, plus the Unix timestamp at registers 300..301. Read them from "
+    "your client and compare with the system clock: a drift of more than a "
+    "couple of seconds means the uint32 or time zone parsing is wrong.</p>\n"
+)
+
+
+#: Примечание над Swagger на странице /api/docs (оформление в стиле сайта).
+_API_DOCS_NOTE_RU = (
+    "Здесь собраны все команды REST API сервера с описаниями и примерами. "
+    "Разверните нужную команду, чтобы увидеть параметры и отправить пробный "
+    "запрос прямо со страницы (кнопка «Try it out»). Запросы выполняются "
+    "по-настоящему на общем сервере, поэтому их результат виден и другим "
+    "пользователям. Схема OpenAPI лежит отдельным файлом по ссылке "
+    '<a href="/api/openapi.json">/api/openapi.json</a>, а к разделам сайта '
+    'ведут шапка и <a href="/docs">документация сервера</a>.'
+)
+_API_DOCS_NOTE_EN = (
+    "This page lists every REST API command of the server with descriptions "
+    "and examples. Expand a command to see its parameters and send a test "
+    "request right from the page (the «Try it out» button). Requests hit the "
+    "real shared server, so other users see their results too. The OpenAPI "
+    "schema is available as a file at "
+    '<a href="/api/openapi.json">/api/openapi.json</a>, and the site sections '
+    'are one click away in the header and in the <a href="/docs">server docs</a>.'
+)
+
+#: CDN swagger-ui-dist с закреплённой версией; своя тёмная тема - swagger-dark.css.
+_SWAGGER_CSS_URL = "https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.17.14/swagger-ui.css"
+_SWAGGER_JS_URL = "https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.17.14/swagger-ui-bundle.js"
+_HLJS_JS_URL = "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"
+
+#: Инициализация Swagger UI поверх схемы /api/openapi.json.
+_API_DOCS_JS = """\
+window.addEventListener("load", function () {
+  window.ui = SwaggerUIBundle({
+    url: "/api/openapi.json",
+    dom_id: "#swagger-ui",
+    deepLinking: true,
+    docExpansion: "list",
+    defaultModelsExpandDepth: 1
+  });
+});
+"""
+
+
+def _api_docs_body(lang: Lang) -> str:
+    """Тело страницы /api/docs: примечание и контейнер Swagger UI."""
+    return (
+        f'<p class="note">{t(lang, _API_DOCS_NOTE_RU, _API_DOCS_NOTE_EN)}</p>\n'
+        '<div id="swagger-ui"></div>\n'
+        f'<script src="{_SWAGGER_JS_URL}"></script>\n'
+        f"<script>{_API_DOCS_JS}</script>"
+    )
+
+
 def _docs_body(config: Config, lang: Lang) -> str:
     """Страница «Документация» (TASK-751): форматы, ограничения, примеры.
 
@@ -424,7 +642,15 @@ def _docs_body(config: Config, lang: Lang) -> str:
         f"  <li>{t(lang, 'Настройки поведений и инъекции ошибок тоже общие для всех подключений.', 'Behavior settings and error injections are shared across all connections too.')}</li>\n"
         f"  <li>{t(lang, 'Аутентификации нет. Не передавайте через сервер чувствительные данные и не используйте его как стенд с реальным оборудованием.', 'There is no authentication. Do not pass sensitive data through the server and do not use it as a bench for real equipment.')}</li>\n"
     )
+    guide_title = t(lang, "Руководство для начинающих", "Beginner's guide")
+    usecases_title = t(lang, "Примеры использования", "Usage examples")
     return (
+        f"<h3>{guide_title}</h3>\n"
+        + t(lang, _GUIDE_RU, _GUIDE_EN)
+        + "\n"
+        f"<h3>{usecases_title}</h3>\n"
+        + t(lang, _USECASES_RU, _USECASES_EN)
+        + "\n"
         f"<h3>{t(lang, 'Спецификация форматов', 'Format specification')}</h3>\n"
         f"<p>{t(lang, _SPEC_INTRO_RU, _SPEC_INTRO_EN)}</p>\n"
         "<ul>\n" + specs + "</ul>\n"
@@ -629,11 +855,11 @@ _EXAMPLES_NOTE_EN = (
 )
 
 
-def _example_block(title: str, code_id: str, code: str, lang: Lang) -> str:
-    """Один пример: заголовок, блок кода и кнопка копирования (TASK-752)."""
+def _example_block(title: str, code_id: str, code: str, lang: Lang, language: str) -> str:
+    """Один пример: заголовок, блок кода с подсветкой и кнопка копирования (TASK-752)."""
     return (
         f"<h4>{escape(title)}</h4>\n"
-        f'<pre><code id="{code_id}">{escape(code)}</code></pre>\n'
+        f'<pre><code class="language-{language}" id="{code_id}">{escape(code)}</code></pre>\n'
         f'<p><button type="button" class="copy-btn" data-copy="{code_id}">'
         f'{t(lang, "Копировать", "Copy")}</button></p>\n'
     )
@@ -660,59 +886,81 @@ def _examples_section(lang: Lang) -> str:
         f"<h3>{t(lang, 'Примеры кода', 'Code examples')}</h3>\n"
         f'<p class="note">{t(lang, _EXAMPLES_NOTE_RU, _EXAMPLES_NOTE_EN)}</p>\n'
         + _example_block(
-            "Python · pymodbus", "example-python", t(lang, _EXAMPLE_PYTHON_RU, _EXAMPLE_PYTHON_EN), lang
+            "Python · pymodbus",
+            "example-python",
+            t(lang, _EXAMPLE_PYTHON_RU, _EXAMPLE_PYTHON_EN),
+            lang,
+            "python",
         )
         + _example_block(
             "Node.js · modbus-serial",
             "example-nodejs",
             t(lang, _EXAMPLE_NODEJS_RU, _EXAMPLE_NODEJS_EN),
             lang,
+            "javascript",
         )
         + _example_block(
-            "C# · NModbus", "example-csharp", t(lang, _EXAMPLE_CSHARP_RU, _EXAMPLE_CSHARP_EN), lang
+            "C# · NModbus",
+            "example-csharp",
+            t(lang, _EXAMPLE_CSHARP_RU, _EXAMPLE_CSHARP_EN),
+            lang,
+            "csharp",
         )
         + '<p id="example-status" role="status"></p>\n'
-        + '<script type="module" src="/static/examples.js"></script>'
+        + f'<script type="module" src="/static/examples.js?v={escape(_project_version())}"></script>'
     )
 
 
 _CONVERTER_NOTE_RU = (
-    "Показывает, в какие два регистра кодируется значение и какое значение "
-    "читается из двух регистров во всех четырёх порядках: <code>ABCD</code>, "
-    "<code>CDAB</code>, <code>BADC</code>, <code>DCBA</code>. Пересчёт делает "
-    "сервер тем же кодеком, что и слейвы 2..9 (<code>docs/HRIR_SPEC.md</code>)."
+    "32-битное значение занимает два регистра, и программы раскладывают байты "
+    "в них по-своему, поэтому одно и то же число в разных инструментах "
+    "выглядит по-разному. Впишите значение - конвертер покажет пару "
+    "регистров для каждого порядка слов: <code>ABCD</code>, <code>CDAB</code>, "
+    "<code>BADC</code>, <code>DCBA</code>. Впишите два регистра - увидите "
+    "значение, которое из них получится. Пересчёт делает сервер тем же "
+    "кодеком, что и слейвы 2..9 (<code>docs/HRIR_SPEC.md</code>)."
 )
 _CONVERTER_NOTE_EN = (
-    "Shows how a value maps to two registers and which value two registers "
-    "decode to, in all four orders: <code>ABCD</code>, <code>CDAB</code>, "
-    "<code>BADC</code>, <code>DCBA</code>. The server does the conversion "
-    "with the same codec as slaves 2..9 (<code>docs/HRIR_SPEC.md</code>)."
+    "A 32-bit value takes two registers, and tools pack the bytes their "
+    "own way, so the same number looks different in different tools. Enter "
+    "a value and the converter shows the register pair for every word "
+    "order: <code>ABCD</code>, <code>CDAB</code>, <code>BADC</code>, "
+    "<code>DCBA</code>. Enter two registers to see the value they decode "
+    "to. The server converts with the same codec as slaves 2..9 "
+    "(<code>docs/HRIR_SPEC.md</code>)."
 )
 _CFG_NOTE_RU = (
-    "Готовые настройки для Modbus Poll, QModMaster, CAS Modbus Scanner, "
-    "скрипт для pyModbus и flow для Node-RED: подключение, функция, адрес и "
-    "формат данных выбранного слейва. Адрес берут из "
-    "<code>docs/HRIR_SPEC.md</code> без пересчёта, количество задают в "
-    "значениях (для 32-битных слейвов значение занимает 2 регистра)."
+    "Соберёт готовую настройку для вашего инструмента, чтобы не вбивать её "
+    "вручную. Выберите инструмент, слейв, область и адрес - на выходе будут "
+    "адрес сервера, функция, формат данных и правильные адреса регистров "
+    "(как в <code>docs/HRIR_SPEC.md</code>, пересчёт не нужен). Подойдёт для "
+    "Modbus Poll, QModMaster, CAS Modbus Scanner, pyModbus и Node-RED. Поле "
+    "«Значений» считает значения, а не регистры: у 32-битных слейвов одно "
+    "значение занимает два регистра."
 )
 _CFG_NOTE_EN = (
-    "Ready configs for Modbus Poll, QModMaster, CAS Modbus Scanner, a script "
-    "for pyModbus and a flow for Node-RED: connection, function, address and "
-    "the data format of the selected slave. The address comes straight from "
-    "<code>docs/HRIR_SPEC.md</code> with no conversion, the count is given in "
-    "values (a 32-bit slave value takes 2 registers)."
+    "Builds a ready config for your tool so you do not have to type it in. "
+    "Pick the tool, slave, area and address - the output has the server "
+    "address, function, data format and the right register addresses "
+    "(straight from <code>docs/HRIR_SPEC.md</code>, no conversion). Works "
+    "for Modbus Poll, QModMaster, CAS Modbus Scanner, pyModbus and "
+    "Node-RED. The Count field counts values, not registers: a 32-bit "
+    "slave value takes two registers."
 )
 _DIFF_NOTE_RU = (
-    "Сравнивает два снимка состояния (<code>POST /api/modbus/snapshot</code>) "
-    "и показывает только различия: изменённые, добавленные и пропавшие "
-    "значения. Прочерк в ячейке означает, что записи в этом снимке нет. "
-    "Снимок можно снять кнопкой ниже, файлы-версии сравниваются между собой."
+    "Сравнит два снимка состояния и покажет только различия: что "
+    "изменилось, что добавилось и что пропало. Так проверяют, что запись "
+    "применилась или что после теста значения вернулись к исходным. Снимок "
+    "снимается кнопкой ниже, файлы снимков сравниваются между собой. "
+    "Прочерк в ячейке значит, что значения в этом снимке нет."
 )
 _DIFF_NOTE_EN = (
-    "Compares two state snapshots (<code>POST /api/modbus/snapshot</code>) "
-    "and shows only the differences: changed, added and missing values. A "
-    "dash in a cell means the snapshot has no such record. Take a snapshot "
-    "with the button below; saved files compare against each other."
+    "Compares two state snapshots and shows only the differences: what "
+    "changed, what appeared and what is gone. Use it to check that your "
+    "write applied or that values returned to the original after a test. "
+    "Take a snapshot with the button below; saved snapshot files compare "
+    "against each other. A dash in a cell means the snapshot has no such "
+    "value."
 )
 
 
@@ -834,13 +1082,14 @@ def _register_map_json() -> str:
 
 
 _REG_NOTE_RU = (
-    "Значения живые (WS <code>/ws/state</code>) и общие для всех подключений: "
-    "запись любого пользователя сразу видна остальным (shared last-write-wins)."
+    "Значения обновляются в реальном времени, без перезагрузки страницы, и "
+    "общие для всех подключений. Запись любого пользователя сразу видна "
+    "остальным и заменяет прежнее значение."
 )
 _REG_NOTE_EN = (
-    "Values are live (WS <code>/ws/state</code>) and shared across all "
-    "connections: any user write is immediately visible to everyone else "
-    "(shared last-write-wins)."
+    "Values update in real time, no page reload needed, and are shared "
+    "across all connections. Any user write is immediately visible to "
+    "everyone else and replaces the previous value."
 )
 _REG_EDIT_RU = (
     "Редактирование CL/HR доступно прямо в таблице (клик по значению). "
@@ -881,7 +1130,7 @@ def _registers_body(lang: Lang) -> str:
         f'  <label>{t(lang, "Формат", "Format")} <select id="reg-format"></select></label>\n'
         "</div>\n"
         '<p class="note" id="reg-fmt"></p>\n'
-        '<table class="values">\n'
+        '<table class="values reg-map">\n'
         f"  <thead><tr><th>{t(lang, 'Адрес', 'Address')}</th>"
         f"<th>{t(lang, 'Значение', 'Value')}</th><th></th></tr></thead>\n"
         '  <tbody id="reg-body"></tbody>\n'
@@ -954,12 +1203,16 @@ _BH_OVERRIDES_NOTE_EN = (
     "counter bits, top HR slots - demo generators)."
 )
 _BH_MINICHART_NOTE_RU = (
-    "Значение выбранного регистра (Unit ID / Область / Адрес выше) за "
-    "последние 60 с, подписка по WS <code>/ws/state</code>."
+    "График показывает, как менялось значение регистра за последнюю минуту. "
+    "Какой именно регистр рисовать, задают поля Unit ID, Область и Адрес над "
+    "графиком. Новые точки появляются сами, как только значение меняется на "
+    "сервере."
 )
 _BH_MINICHART_NOTE_EN = (
-    "Value of the selected register (Unit ID / Area / Address above) for the "
-    "last 60 s, subscribed over WS <code>/ws/state</code>."
+    "The chart shows how the register value changed over the last minute. "
+    "The Unit ID, Area and Address fields above pick the register to plot. "
+    "New points appear on their own as soon as the value changes on the "
+    "server."
 )
 
 
@@ -1054,16 +1307,19 @@ def _tz_cards(lang: Lang) -> str:
 
 
 _TZ_NOTE_RU = (
-    "Каждая зона Z=0..26 - блок из 8 метрик в IR slave 10 (дата, время, день "
-    "недели, смещение UTC). Метрики вычисляет сервер при чтении. Z=0..14 даёт "
-    "UTC+00..UTC+14, Z=15..26 даёт UTC−01..UTC−12. Значения живые (WS "
-    "<code>/ws/state</code>)."
+    "Ниже все 27 зон slave 10. Каждая зона занимает восемь регистров и "
+    "показывает дату, время, день недели и смещение UTC для своего пояса. "
+    "Зоны от 0 до 14 - пояса с нулевым и положительным смещением, от 15 до "
+    "26 - с отрицательным; точное смещение видно в шапке карточки. Время "
+    "сервер считает при чтении, поэтому оно всегда актуальное, а карточки "
+    "обновляются сами."
 )
 _TZ_NOTE_EN = (
-    "Each zone Z=0..26 is a block of 8 metrics in IR of slave 10 (date, time, "
-    "weekday, UTC offset). The server computes the metrics on read. Z=0..14 "
-    "gives UTC+00..UTC+14, Z=15..26 gives UTC−01..UTC−12. Values are live "
-    "(WS <code>/ws/state</code>)."
+    "All 27 zones of slave 10 are below. Each zone takes eight registers "
+    "and shows the date, time, weekday and UTC offset for its zone. Zones "
+    "0-14 cover zero and positive offsets, 15-26 negative ones; the exact "
+    "offset sits in each card header. The server computes the time on "
+    "read, so it is always current and the cards update on their own."
 )
 _TZ_TS_NOTE_RU = (
     "IR 300..301 - Unix timestamp (<code>uint32 ABCD</code>, погрешность "
@@ -1100,33 +1356,37 @@ def _timezones_body(lang: Lang) -> str:
 
 
 _INJ_NOTE_RU = (
-    "Инъекции (<code>exception</code> / <code>delay</code> / "
-    "<code>timeout</code>) влияют на Modbus-запросы выбранного слейва или "
-    "диапазона адресов и держатся не дольше "
-    "<code>INJECTION_MAX_TTL_S</code>. Инъекции общие для всех пользователей "
-    "сервера. REST: <code>POST /api/modbus/inject</code>, снятие "
-    "<code>POST /api/modbus/inject/clear</code>."
+    "Инъекция имитирует неисправность устройства и помогает проверить, как "
+    "ваш клиент переносит сбои. Тип <code>exception</code> заставляет слейв "
+    "отвечать кодом ошибки Modbus, <code>delay</code> добавляет задержку "
+    "ответа, <code>timeout</code> вообще не отвечает - клиент получает "
+    "тайм-аут. Инъекция действует на выбранный слейв или диапазон адресов, "
+    "живёт не дольше {ttl} секунд и видна всем пользователям сервера. Снять "
+    "все инъекции - кнопкой «Сбросить инъекции»."
 )
 _INJ_NOTE_EN = (
-    "Injections (<code>exception</code> / <code>delay</code> / "
-    "<code>timeout</code>) affect Modbus requests of the selected slave or "
-    "address range and stay active no longer than "
-    "<code>INJECTION_MAX_TTL_S</code>. Injections are shared across all "
-    "server users. REST: <code>POST /api/modbus/inject</code>, clearing "
-    "<code>POST /api/modbus/inject/clear</code>."
+    "An injection fakes a device fault so you can see how your client "
+    "handles failures. Type <code>exception</code> makes the slave reply "
+    "with a Modbus error code, <code>delay</code> slows the reply down, "
+    "<code>timeout</code> does not reply at all and the client gets a "
+    "timeout. An injection targets the selected slave or address range, "
+    "lives at most {ttl} seconds and is visible to all server users. Clear "
+    "them all with the \"Clear injections\" button."
 )
 
 
-def _injections_body(lang: Lang) -> str:
+def _injections_body(config: Config, lang: Lang) -> str:
     """Страница «Инъекции ошибок» (TASK-743): форма добавления и список активных.
 
     Типы exception / delay / timeout; цель - весь слейв или диапазон адресов
     по сетке значений. Список наполняет `static/injections.js`
     (REST `GET/POST /api/modbus/inject`, снятие - `POST …/inject/clear`).
+    В примечании подставляется реальный лимит TTL из конфига окружения.
     """
     slave_options = "".join(f"<option>{slave_id}</option>" for slave_id in SLAVE_SPECS)
+    note = t(lang, _INJ_NOTE_RU, _INJ_NOTE_EN).format(ttl=f"{config.INJECTION_MAX_TTL_S:g}")
     return (
-        f'<p class="note">{t(lang, _INJ_NOTE_RU, _INJ_NOTE_EN)}</p>\n'
+        f'<p class="note">{note}</p>\n'
         f"<h3>{t(lang, 'Добавить инъекцию', 'Add injection')}</h3>\n"
         '<div class="form-row">\n'
         f'  <label>{t(lang, "Тип", "Type")} <select id="inj-kind">\n'
@@ -1179,30 +1439,36 @@ def _injections_body(lang: Lang) -> str:
 
 
 _JOURNAL_NOTE_RU = (
-    "Последние <code>JOURNAL_SIZE</code> (1000) записей: записи в регистры, "
-    "смена поведений, инъекции и отказы locked-поведений. Журнал живёт в "
-    "памяти (перезапуск сервера сбрасывает его) и общий для всех "
-    "пользователей. Новые события приходят live по <code>/ws/events</code>, "
-    "снимок - <code>GET /api/modbus/journal</code>."
+    "Журнал показывает всё, что происходит на сервере: запись значений, "
+    "смену поведений, инъекции и попытки записать в закрытые регистры. Он "
+    "общий для всех пользователей и хранит последние {size} событий в "
+    "памяти - после перезапуска сервера записи исчезают. Новые события "
+    "появляются в таблице сразу, без перезагрузки страницы. Страница "
+    "забирает записи по GET /api/modbus/journal, живые события приходят "
+    "по WebSocket /ws/events."
 )
 _JOURNAL_NOTE_EN = (
-    "The last <code>JOURNAL_SIZE</code> (1000) events: register writes, "
-    "behavior changes, injections and locked-behavior rejections. The journal "
-    "lives in memory (a server restart resets it) and is shared across all "
-    "users. New events arrive live over <code>/ws/events</code>, the snapshot "
-    "is <code>GET /api/modbus/journal</code>."
+    "The journal shows everything that happens on the server: register "
+    "writes, behavior changes, injections and attempts to write into "
+    "locked registers. It is shared across all users and keeps the last "
+    "{size} events in memory - a server restart wipes the records. New "
+    "events appear in the table immediately, no page reload needed. The "
+    "page loads records via GET /api/modbus/journal, live events arrive "
+    "over WebSocket /ws/events."
 )
 
 
-def _journal_body(lang: Lang) -> str:
-    """Страница «Журнал событий» (TASK-745): последние 1000 записей + live.
+def _journal_body(config: Config, lang: Lang) -> str:
+    """Страница «Журнал событий» (TASK-745): последние N записей + live.
 
     Наполняет `static/journal.js`: стартовая загрузка через
     `GET /api/modbus/journal?limit=1000`, новые события - кадрами `/ws/events`
     (TASK-404). Записи общие для всех пользователей, хранение - в памяти.
+    В примечании подставляется реальный размер буфера из конфига окружения.
     """
+    note = t(lang, _JOURNAL_NOTE_RU, _JOURNAL_NOTE_EN).format(size=config.JOURNAL_SIZE)
     return (
-        f'<p class="note">{t(lang, _JOURNAL_NOTE_RU, _JOURNAL_NOTE_EN)}</p>\n'
+        f'<p class="note">{note}</p>\n'
         '<p class="form-actions">\n'
         f'  <button id="journal-refresh" type="button">{t(lang, "Обновить", "Refresh")}</button>\n'
         '  <span id="journal-status" role="status"></span>\n'
@@ -1226,7 +1492,7 @@ def _footer(lang: Lang) -> str:
     return (
         "<footer>\n<div class=\"wrap\">\n"
         '  <div class="foot-top">\n'
-        '    <div class="foot-brand">MODBUS<span class="dot">·</span>TOOLKIT</div>\n'
+        '    <div class="foot-brand">MODBUS<span class="dot">·</span>SANDBOX</div>\n'
         f'    <div class="foot-version">v{ver}</div>\n'
         "  </div>\n"
         '  <div class="foot-grid">\n'
@@ -1257,7 +1523,7 @@ def _footer(lang: Lang) -> str:
     )
 
 
-def _shell(title: str, active: str, body: str, lang: Lang) -> str:
+def _shell(title: str, active: str, body: str, lang: Lang, extra_head: str = "") -> str:
     """Каркас страницы: topbar с брендом, nav, плашка, контент, донат, футер."""
     nav = "".join(
         f'<a href="{href}" class="nav-link{" active" if href == active else ""}">'
@@ -1274,14 +1540,15 @@ def _shell(title: str, active: str, body: str, lang: Lang) -> str:
 <title>{escape(title)} · {escape(site)}</title>
 <link rel="icon" href="/static/favicon.ico" sizes="any">
 <link rel="stylesheet" href="/static/app.css">
+{extra_head}
 <script>window.LANG = "{lang}";</script>
 <script src="/static/i18n.js"></script>
 </head>
 <body>
 <header class="topbar">
   <div class="wrap topbar-row">
-    <a class="brand" href="/">MODBUS<span class="dot">·</span>TOOLKIT</a>
-    <span class="topbar-note">{PUBLIC_ENDPOINT}</span>
+    <a class="brand" href="/">MODBUS<span class="dot">·</span>SANDBOX</a>
+    <span class="topbar-badge">{t(lang, "Бесплатный публичный сервер", "Free public server")}</span>
     <p class="lang-switch">{lang_links(lang, active)}</p>
   </div>
 </header>
@@ -1302,9 +1569,16 @@ def _shell(title: str, active: str, body: str, lang: Lang) -> str:
 """
 
 
-def _page(request: Request, title: str, active: str, body: str, lang: Lang) -> HTMLResponse:
+def _page(
+    request: Request,
+    title: str,
+    active: str,
+    body: str,
+    lang: Lang,
+    extra_head: str = "",
+) -> HTMLResponse:
     """Ответ страницы: язык из запроса, cookie запоминает выбор."""
-    response = HTMLResponse(_shell(title, active, body, lang))
+    response = HTMLResponse(_shell(title, active, body, lang, extra_head))
     if "lang" in request.query_params:
         response.set_cookie(COOKIE_NAME, lang, max_age=365 * 24 * 3600, samesite="lax")
     return response
@@ -1359,27 +1633,27 @@ def get_timezones(request: Request) -> HTMLResponse:
 
 
 @pages_router.get("/injections", response_class=HTMLResponse)
-def get_injections_page(request: Request) -> HTMLResponse:
+def get_injections_page(request: Request, services: ServicesDep) -> HTMLResponse:
     """Инъекции ошибок: форма добавления и список активных (TASK-605, TASK-743)."""
     lang = resolve_lang(request)
     return _page(
         request,
         t(lang, "Инъекции ошибок", "Error injections"),
         "/injections",
-        _injections_body(lang),
+        _injections_body(services.config, lang),
         lang,
     )
 
 
 @pages_router.get("/journal", response_class=HTMLResponse)
-def get_journal_page(request: Request) -> HTMLResponse:
-    """Журнал событий: последние 1000 записей + live (TASK-745)."""
+def get_journal_page(request: Request, services: ServicesDep) -> HTMLResponse:
+    """Журнал событий: последние N записей + live (TASK-745)."""
     lang = resolve_lang(request)
     return _page(
         request,
         t(lang, "Журнал событий", "Event journal"),
         "/journal",
-        _journal_body(lang),
+        _journal_body(services.config, lang),
         lang,
     )
 
@@ -1407,4 +1681,22 @@ def get_docs(request: Request, services: ServicesDep) -> HTMLResponse:
         "/docs",
         _docs_body(services.config, lang),
         lang,
+        extra_head=f'<script defer src="{_HLJS_JS_URL}"></script>',
+    )
+
+
+@pages_router.get("/api/docs", response_class=HTMLResponse)
+def get_api_docs(request: Request) -> HTMLResponse:
+    """Swagger UI в оболочке сайта: бренд, навигация и тёмное оформление."""
+    lang = resolve_lang(request)
+    return _page(
+        request,
+        "REST API",
+        "/api/docs",
+        _api_docs_body(lang),
+        lang,
+        extra_head=(
+            f'<link rel="stylesheet" href="{_SWAGGER_CSS_URL}">\n'
+            '<link rel="stylesheet" href="/static/swagger-dark.css">'
+        ),
     )

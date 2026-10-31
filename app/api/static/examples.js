@@ -18,9 +18,23 @@ async function copyExample(event) {
   }, 1500);
 }
 
+// Подсветка синтаксиса: highlight.js подключён на странице /docs (defer).
+// Модуль может выполниться раньше CDN-скрипта, поэтому при раннем запуске
+// дожидаемся события load. Если CDN недоступен - оставляем текст без подсветки.
+function highlightCode() {
+  if (!window.hljs) return false;
+  for (const block of document.querySelectorAll('pre code[class*="language-"]')) {
+    window.hljs.highlightElement(block);
+  }
+  return true;
+}
+
 function init() {
   for (const button of document.querySelectorAll(".copy-btn")) {
     button.addEventListener("click", copyExample);
+  }
+  if (!highlightCode()) {
+    window.addEventListener("load", highlightCode);
   }
 }
 

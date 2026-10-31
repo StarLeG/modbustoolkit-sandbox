@@ -105,7 +105,11 @@ p:last-child{margin-bottom:0;}
   color:var(--text);text-decoration:none;white-space:nowrap;
 }
 .topbar-row .brand .dot{color:var(--accent);}
-.topbar-note{font-family:var(--mono);font-size:12px;color:var(--text-muted);white-space:nowrap;}
+.topbar-badge{
+  font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:0.05em;
+  color:var(--accent);border:1px solid var(--accent);border-radius:999px;
+  padding:3px 10px;white-space:nowrap;
+}
 .lang-switch{margin:0 0 0 auto;display:flex;gap:6px;}
 .lang-switch a{
   font-family:var(--mono);font-size:12px;color:var(--text-muted);
@@ -256,6 +260,19 @@ pre{
 }
 pre code{background:none;padding:0;font-size:13px;line-height:1.55;}
 
+/* подсветка синтаксиса (highlight.js) в примерах кода - токены на переменных темы */
+.hljs{color:var(--text);}
+.hljs-comment,.hljs-quote{color:var(--text-muted);font-style:italic;}
+.hljs-keyword,.hljs-selector-tag,.hljs-doctag,.hljs-literal,.hljs-meta{color:var(--danger);}
+.hljs-string,.hljs-attr,.hljs-attribute,.hljs-symbol,.hljs-bullet,.hljs-addition{color:var(--accent);}
+.hljs-number,.hljs-built_in,.hljs-type,.hljs-selector-class,.hljs-selector-id,
+.hljs-template-variable,.hljs-variable.language_{color:var(--warn);}
+.hljs-title,.hljs-name,.hljs-section{color:var(--text);font-weight:600;}
+.hljs-emphasis{font-style:italic;}
+.hljs-strong{font-weight:600;}
+.hljs-link{color:var(--accent);text-decoration:underline;}
+.hljs-deletion{color:var(--danger);}
+
 table.formats,
 table.values{
   border-collapse:collapse;width:100%;margin:12px 0 18px;
@@ -272,7 +289,7 @@ table.formats th,table.values th{
 }
 table.values tr:hover td{background:var(--surface-2);}
 
-.note{color:var(--text-muted);font-size:13.5px;}
+.note{color:var(--text-muted);font-size:13.5px;max-width:none;}
 
 /* ---------- карта регистров ---------- */
 #reg-page{margin:0 0.75rem;}
@@ -281,6 +298,10 @@ table.values td.editable:hover{background:color-mix(in srgb,var(--accent) 12%,tr
 table.values td.editing{outline:1px solid var(--accent);}
 table.values td input{width:7rem;}
 table.values td select{width:7rem;}
+/* Фиксированные крайние колонки: правка значения не меняет ширину столбцов. */
+table.reg-map{table-layout:fixed;}
+table.reg-map th:first-child,table.reg-map td:first-child{width:7rem;}
+table.reg-map th:last-child,table.reg-map td:last-child{width:5rem;}
 #chart-canvas{width:100%;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);}
 
 /* ---------- часовые пояса ---------- */
@@ -326,5 +347,4 @@ footer .wrap{padding-top:34px;padding-bottom:40px;}
   .wrap{padding:0 16px;}
   .docs-banner{padding:20px 16px;}
   .foot-grid{grid-template-columns:1fr;gap:24px;}
-  .topbar-note{display:none;}
 }

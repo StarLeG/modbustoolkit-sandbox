@@ -115,6 +115,35 @@ def test_docs_page_has_code_examples() -> None:
         assert fragment in html, fragment
 
 
+def test_docs_page_has_beginner_guide_and_usecases() -> None:
+    """Руководство для начинающих и примеры использования простым языком."""
+    with _client() as client:
+        html = client.get("/docs").text
+    for fragment in (
+        "Руководство для начинающих",
+        "Примеры использования",
+        "Первая проверка по шагам",
+        "unit ID",
+        "uint32 CDAB",
+        "float DCBA",
+        "Unix timestamp",
+    ):
+        assert fragment in html, fragment
+
+
+def test_docs_page_examples_have_syntax_highlighting() -> None:
+    """Примеры кода размечены под highlight.js, скрипт подключён на странице."""
+    with _client() as client:
+        html = client.get("/docs").text
+    for fragment in (
+        'class="language-python" id="example-python"',
+        'class="language-javascript" id="example-nodejs"',
+        'class="language-csharp" id="example-csharp"',
+        "highlight.js/11.9.0/highlight.min.js",
+    ):
+        assert fragment in html, fragment
+
+
 def test_docs_page_examples_addressing() -> None:
     """Примеры: хост, порт, device_id, shared last-write-wins (TASK-752)."""
     with _client() as client:
