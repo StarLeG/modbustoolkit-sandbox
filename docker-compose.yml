@@ -24,6 +24,7 @@ services:
       # Внутри контейнера слушатели обязаны быть на всех интерфейсах.
       MODBUS_TCP_HOST: "0.0.0.0"
       MODBUS_TCP_PORT: "${MODBUS_TCP_PORT:-5020}"
+      MODBUS_PUBLIC_HOST: "${MODBUS_PUBLIC_HOST:-modbustoolkit.electroman.by}"
       MODBUS_MAX_CONN_PER_IP: "${MODBUS_MAX_CONN_PER_IP:-20}"
       MODBUS_MAX_WRITE_PER_SEC: "${MODBUS_MAX_WRITE_PER_SEC:-200}"
       WEB_MAX_WRITE_PER_MIN_PER_IP: "${WEB_MAX_WRITE_PER_MIN_PER_IP:-50}"

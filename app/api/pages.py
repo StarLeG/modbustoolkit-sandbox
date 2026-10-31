@@ -1589,7 +1589,7 @@ def get_index(request: Request, services: ServicesDep) -> HTMLResponse:
     """Обзор: параметры подключения и таблица форматов (TASK-701)."""
     lang = resolve_lang(request)
     config = services.config
-    body = _index_body(config.MODBUS_TCP_HOST, config.MODBUS_TCP_PORT, lang)
+    body = _index_body(config.MODBUS_PUBLIC_HOST, config.MODBUS_TCP_PORT, lang)
     return _page(request, t(lang, "Обзор", "Overview"), "/", body, lang)
 
 

@@ -18,9 +18,6 @@ from typing import Literal
 
 from app.modbus.types import SLAVE_SPECS, Area, RegisterFormat
 
-#: Публичный хост сервера (modbustoolkit.electroman.by).
-PUBLIC_HOST = "modbustoolkit.electroman.by"
-
 ConfigTool = Literal["modbus_poll", "qmodmaster", "cas_scanner", "pymodbus", "nodered"]
 
 CONFIG_TOOLS: tuple[ConfigTool, ...] = (

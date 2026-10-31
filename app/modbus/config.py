@@ -22,6 +22,9 @@ class Config:
 
     MODBUS_TCP_HOST: str = "0.0.0.0"
     MODBUS_TCP_PORT: int = 5020
+    # Адрес, по которому клиенты подключаются снаружи (UI, генератор конфигов);
+    # слушатель MODBUS_TCP_HOST обычно 0.0.0.0 и для клиента бесполезен.
+    MODBUS_PUBLIC_HOST: str = "modbustoolkit.electroman.by"
     MODBUS_MAX_CONN_PER_IP: int = 20
     MODBUS_MAX_WRITE_PER_SEC: int = 200
     WEB_MAX_WRITE_PER_MIN_PER_IP: int = 50
@@ -37,6 +40,7 @@ class Config:
         return cls(
             MODBUS_TCP_HOST=os.environ.get("MODBUS_TCP_HOST") or base.MODBUS_TCP_HOST,
             MODBUS_TCP_PORT=_env_int("MODBUS_TCP_PORT", base.MODBUS_TCP_PORT),
+            MODBUS_PUBLIC_HOST=os.environ.get("MODBUS_PUBLIC_HOST") or base.MODBUS_PUBLIC_HOST,
             MODBUS_MAX_CONN_PER_IP=_env_int("MODBUS_MAX_CONN_PER_IP", base.MODBUS_MAX_CONN_PER_IP),
             MODBUS_MAX_WRITE_PER_SEC=_env_int(
                 "MODBUS_MAX_WRITE_PER_SEC", base.MODBUS_MAX_WRITE_PER_SEC

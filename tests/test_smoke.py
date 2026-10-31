@@ -10,6 +10,7 @@ def test_config_defaults_match_env_table() -> None:
     cfg = Config()
     assert cfg.MODBUS_TCP_HOST == "0.0.0.0"
     assert cfg.MODBUS_TCP_PORT == 5020
+    assert cfg.MODBUS_PUBLIC_HOST == "modbustoolkit.electroman.by"
     assert cfg.MODBUS_MAX_CONN_PER_IP == 20
     assert cfg.MODBUS_MAX_WRITE_PER_SEC == 200
     assert cfg.WEB_MAX_WRITE_PER_MIN_PER_IP == 50
@@ -23,8 +24,10 @@ def test_config_from_env_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MODBUS_TCP_HOST", "127.0.0.1")
     monkeypatch.setenv("MODBUS_TCP_PORT", "1502")
     monkeypatch.setenv("ENGINE_TICK_MS", "250")
+    monkeypatch.setenv("MODBUS_PUBLIC_HOST", "modbus.example.org")
     cfg = Config.from_env()
     assert cfg.MODBUS_TCP_HOST == "127.0.0.1"
+    assert cfg.MODBUS_PUBLIC_HOST == "modbus.example.org"
     assert cfg.MODBUS_TCP_PORT == 1502
     assert cfg.ENGINE_TICK_MS == 250
     assert cfg.JOURNAL_SIZE == 1000  # не задана — дефолт

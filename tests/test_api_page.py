@@ -8,6 +8,8 @@
 """
 from __future__ import annotations
 
+from dataclasses import replace
+
 from fastapi.testclient import TestClient
 
 from app.api.app import create_app
@@ -29,6 +31,15 @@ def test_index_has_public_warning() -> None:
     assert WARNING_BANNER in html  # обязательный текст плашки целиком
     for phrase in ("многопользователь", "перезапис", "last-write-wins", "в памяти", "лимит"):
         assert phrase in html, phrase
+
+
+def test_index_shows_public_host_not_listener() -> None:
+    """«Обзор» показывает адрес для клиентов, а не слушатель 0.0.0.0."""
+    config = replace(Config(), MODBUS_PUBLIC_HOST="modbus.example.org")
+    with TestClient(create_app(services=build_services(config), run_engine=False)) as client:
+        html = client.get("/").text
+    assert "<code>modbus.example.org</code>" in html
+    assert "<code>0.0.0.0</code>" not in html
 
 
 def test_index_shows_connection_info() -> None:

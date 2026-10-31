@@ -152,6 +152,7 @@ class Behavior:
 |---|---|---|
 | `MODBUS_TCP_HOST` | `0.0.0.0` | адрес слушателя |
 | `MODBUS_TCP_PORT` | `5020` | TCP-порт Modbus (502 — опционально, если окружение позволяет) |
+| `MODBUS_PUBLIC_HOST` | `modbustoolkit.electroman.by` | адрес для клиентов: «Обзор» и генератор конфигов |
 | `MODBUS_MAX_CONN_PER_IP` | `20` | лимит соединений с одного IP |
 | `MODBUS_MAX_WRITE_PER_SEC` | `200` | лимит записей на соединение |
 | `WEB_MAX_WRITE_PER_MIN_PER_IP` | `50` | лимит действий из UI на IP (записи, поведения, снимки, инъекции) |

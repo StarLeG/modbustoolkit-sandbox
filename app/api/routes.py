@@ -8,7 +8,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from fastapi.responses import PlainTextResponse
 
-from app.api.configgen import PUBLIC_HOST, ConfigTarget, generate
+from app.api.configgen import ConfigTarget, generate
 from app.api.models import (
     BatchIn,
     BatchResponse,
@@ -955,7 +955,7 @@ def post_configgen(body: ConfigGenIn, services: ServicesDep) -> ConfigGenRespons
         area=body.area,
         address=body.address,
         count=body.count,
-        host=body.host or PUBLIC_HOST,
+        host=body.host or services.config.MODBUS_PUBLIC_HOST,
         port=body.port or services.config.MODBUS_TCP_PORT,
     )
     try:
