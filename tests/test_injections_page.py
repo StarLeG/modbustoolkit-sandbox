@@ -7,6 +7,8 @@
 """
 from __future__ import annotations
 
+from dataclasses import replace
+
 from fastapi.testclient import TestClient
 
 from app.api.app import create_app
@@ -49,6 +51,31 @@ def test_injections_page_has_form_and_list() -> None:
         "timeout",
     ):
         assert fragment in html, fragment
+
+
+def test_injections_page_has_shared_rules() -> None:
+    """Плашка с правилами: инъекции общие, TTL из конфига, RU и EN."""
+    config = replace(Config(), INJECTION_MAX_TTL_S=120)
+    with _client(build_services(config)) as client:
+        ru = client.get("/injections").text
+        en = client.get("/injections?lang=en").text
+    for fragment in (
+        'class="banner inj-rules"',
+        "Инъекции общие для всех.",
+        "учебную аварию",
+        "максимум, 120 с",
+        "диапазона адресов",
+        "кнопкой ✕",
+        "«Журнале»",
+    ):
+        assert fragment in ru, fragment
+    for fragment in (
+        'class="banner inj-rules"',
+        "Injections are shared by everyone.",
+        "the maximum, 120 s",
+        "«Journal»",
+    ):
+        assert fragment in en, fragment
 
 
 def test_injections_js_served() -> None:

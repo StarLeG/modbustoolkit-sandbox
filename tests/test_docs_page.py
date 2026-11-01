@@ -149,7 +149,7 @@ def test_docs_page_examples_addressing() -> None:
     with _client() as client:
         html = client.get("/docs").text
     for fragment in (
-        "modbustoolkit.electroman.by",
+        "modbus-sendbox.electroman.by",
         "5020",
         "device_id=1",
         "read_holding_registers",
@@ -161,6 +161,54 @@ def test_docs_page_examples_addressing() -> None:
         "shared last-write-wins",
     ):
         assert fragment in html, fragment
+
+
+def test_docs_page_endpoint_follows_config() -> None:
+    """Хост и порт в руководстве и примерах - из окружения, как на «Обзоре»."""
+    config = replace(Config(), MODBUS_PUBLIC_HOST="bench.example.org", MODBUS_TCP_PORT=1502)
+    with _client(config) as client:
+        for path in ("/docs", "/docs?lang=en"):
+            html = client.get(path).text
+            assert "<code>bench.example.org</code>" in html, path
+            assert "<code>1502</code>" in html, path
+            assert "ModbusTcpClient(&quot;bench.example.org&quot;, port=1502)" in html, path
+            assert "connectTCP(&quot;bench.example.org&quot;, { port: 1502 })" in html, path
+            assert "TcpClient(&quot;bench.example.org&quot;, 1502)" in html, path
+            assert "{host}" not in html and "{port}" not in html, path
+            # В разделе «Исходный код» 5020 - дефолт своей установки, не этого сервера
+            about_this_server = html.split('id="source-clone"')[0]
+            assert "5020" not in about_this_server, path
+
+
+def test_docs_page_has_source_and_local_setup() -> None:
+    """Раздел «Исходный код»: ссылка на GitHub, клонирование, запуск (RU и EN)."""
+    with _client() as client:
+        ru = client.get("/docs").text
+        en = client.get("/docs?lang=en").text
+    for html, title in ((ru, "Исходный код и свой сервер"), (en, "Source code and your own server")):
+        for fragment in (
+            title,
+            'href="https://github.com/StarLeG/modbustoolkit-sandbox"',
+            "git clone https://github.com/StarLeG/modbustoolkit-sandbox.git",
+            "cd modbustoolkit-sandbox",
+            "uv run python -m app",
+            "docker compose up -d --build",
+            "pip install .",
+            "MODBUS_PUBLIC_HOST",
+            'class="language-bash" id="source-clone"',
+            'data-copy="source-clone"',
+            "docs/DEPLOY.md",
+        ):
+            assert fragment in html, fragment
+
+
+def test_footer_links_to_github() -> None:
+    """Ссылка на репозиторий есть в футере каждой страницы."""
+    with _client() as client:
+        for path in ("/", "/registers", "/injections", "/docs"):
+            html = client.get(path).text
+            assert 'href="https://github.com/StarLeG/modbustoolkit-sandbox"' in html, path
+            assert "Исходный код на GitHub" in html, path
 
 
 def test_examples_js_copies_to_clipboard() -> None:

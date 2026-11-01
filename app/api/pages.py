@@ -60,6 +60,9 @@ PRODUCT_URL = "https://modbustoolkit.electroman.by/"
 PRODUCT_DOCS_URL = "https://modbustoolkit.electroman.by/docs.html"
 SUPPORT_URL = "https://modbustoolkit.electroman.by/support.html"
 TELEGRAM_URL = "https://t.me/modbustoolkit"
+#: Публичный репозиторий сервера: ссылка в футере и раздел «Исходный код» на /docs.
+GITHUB_URL = "https://github.com/StarLeG/modbustoolkit-sandbox"
+GITHUB_CLONE_URL = f"{GITHUB_URL}.git"
 
 
 def _project_version() -> str:
@@ -267,13 +270,14 @@ _INDEX_TAIL_EN = (
 )
 
 _PROMO_RU = (
-    "Десктопный ModbusToolkit подключается к этому серверу по Modbus-TCP и "
-    "помогает проверить клиентский код на живых данных до выхода на реальный "
-    "стенд."
+    "ModbusToolkit - отдельный десктопный Modbus-клиент того же автора. Он "
+    "подключается к Modbus Sandbox по Modbus-TCP и помогает проверить "
+    "клиентский код на живых данных до выхода на реальный стенд."
 )
 _PROMO_EN = (
-    "Desktop ModbusToolkit connects to this server over Modbus-TCP and helps "
-    "you test client code against live data before the real bench."
+    "ModbusToolkit is a separate desktop Modbus client by the same author. "
+    "It connects to Modbus Sandbox over Modbus-TCP and helps you test client "
+    "code against live data before the real bench."
 )
 
 _SUPPORT_RU = (
@@ -388,7 +392,18 @@ def _api_links(lang: Lang) -> str:
     )
 
 
+def _with_endpoint(text: str, host: str, port: int) -> str:
+    """Подставить публичный адрес сервера вместо меток `{host}` и `{port}`.
+
+    Тексты содержат и другие фигурные скобки (f-строки в примерах кода),
+    поэтому `str.format` не подходит - заменяются только эти две метки.
+    Экранирование под HTML - забота вызывающего.
+    """
+    return text.replace("{host}", host).replace("{port}", str(port))
+
+
 #: Руководство для начинающих на «Документации»: простой язык, шаги, карта разделов.
+#: Метки `{host}` и `{port}` заполняет `_with_endpoint` из `Config`.
 _GUIDE_RU = (
     "<p>Modbus Sandbox - бесплатный сервер в интернете, который притворяется "
     "сразу десятью Modbus-устройствами. К нему подключают свой клиент - "
@@ -397,7 +412,7 @@ _GUIDE_RU = (
     "<p>Что нужно знать перед стартом:</p>\n"
     "<ul>\n"
     "<li>Modbus-TCP общается через адрес и порт. У нас это "
-    "<code>modbustoolkit.electroman.by</code>, порт <code>5020</code>.</li>\n"
+    "<code>{host}</code>, порт <code>{port}</code>.</li>\n"
     "<li>Внутри живут 10 устройств - их называют слейвами и нумеруют от 1 до "
     "10, а номер устройства в запросе зовут unit ID.</li>\n"
     "<li>Данные лежат в регистрах - ячейках с числами или битами. Есть четыре "
@@ -411,8 +426,8 @@ _GUIDE_RU = (
     "<p>Первая проверка по шагам:</p>\n"
     "<ol>\n"
     "<li>Откройте ModbusToolkit (или любой другой Modbus-клиент) и создайте "
-    "соединение Modbus TCP с хостом <code>modbustoolkit.electroman.by</code> "
-    "и портом <code>5020</code>.</li>\n"
+    "соединение Modbus TCP с хостом <code>{host}</code> "
+    "и портом <code>{port}</code>.</li>\n"
     "<li>Укажите unit ID 1 и прочитайте 10 holding registers с адреса 1 "
     "функцией 3. В ответ придёт список чисел.</li>\n"
     "<li>Запишите в первый регистр своё значение функцией 6 и прочитайте "
@@ -444,7 +459,7 @@ _GUIDE_EN = (
     "<p>What to know before you start:</p>\n"
     "<ul>\n"
     "<li>Modbus-TCP talks over an address and a port. Ours is "
-    "<code>modbustoolkit.electroman.by</code>, port <code>5020</code>.</li>\n"
+    "<code>{host}</code>, port <code>{port}</code>.</li>\n"
     "<li>Inside live 10 devices - they are called slaves and numbered 1 to "
     "10. The device number in a request is the unit ID.</li>\n"
     "<li>Data lives in registers - cells holding numbers or bits. Four "
@@ -458,8 +473,8 @@ _GUIDE_EN = (
     "<p>Your first check, step by step:</p>\n"
     "<ol>\n"
     "<li>Open ModbusToolkit (or any other Modbus client) and create a "
-    "Modbus TCP connection to host <code>modbustoolkit.electroman.by</code> "
-    "port <code>5020</code>.</li>\n"
+    "Modbus TCP connection to host <code>{host}</code> "
+    "port <code>{port}</code>.</li>\n"
     "<li>Set unit ID 1 and read 10 holding registers from address 1 with "
     "function 3. A list of numbers comes back.</li>\n"
     "<li>Write your own value to the first register with function 6 and "
@@ -644,9 +659,10 @@ def _docs_body(config: Config, lang: Lang) -> str:
     )
     guide_title = t(lang, "Руководство для начинающих", "Beginner's guide")
     usecases_title = t(lang, "Примеры использования", "Usage examples")
+    host, port = config.MODBUS_PUBLIC_HOST, config.MODBUS_TCP_PORT
     return (
         f"<h3>{guide_title}</h3>\n"
-        + t(lang, _GUIDE_RU, _GUIDE_EN)
+        + _with_endpoint(t(lang, _GUIDE_RU, _GUIDE_EN), escape(host), port)
         + "\n"
         f"<h3>{usecases_title}</h3>\n"
         + t(lang, _USECASES_RU, _USECASES_EN)
@@ -667,7 +683,8 @@ def _docs_body(config: Config, lang: Lang) -> str:
         "<h3>API</h3>\n"
         f"<p>{t(lang, _API_RU, _API_EN)}</p>\n"
         + _api_links(lang)
-        + _examples_section(lang)
+        + _examples_section(host, port, lang)
+        + _source_section(lang)
     )
 
 
@@ -678,7 +695,7 @@ _EXAMPLE_PYTHON_RU = """\
 # pip install "pymodbus>=3.6"
 from pymodbus.client import ModbusTcpClient
 
-client = ModbusTcpClient("modbustoolkit.electroman.by", port=5020)
+client = ModbusTcpClient("{host}", port={port})
 if not client.connect():
     raise SystemExit("нет соединения с сервером")
 
@@ -704,7 +721,7 @@ _EXAMPLE_PYTHON_EN = """\
 # pip install "pymodbus>=3.6"
 from pymodbus.client import ModbusTcpClient
 
-client = ModbusTcpClient("modbustoolkit.electroman.by", port=5020)
+client = ModbusTcpClient("{host}", port={port})
 if not client.connect():
     raise SystemExit("no connection to the server")
 
@@ -732,7 +749,7 @@ const ModbusRTU = require("modbus-serial");
 
 async function main() {
   const client = new ModbusRTU();
-  await client.connectTCP("modbustoolkit.electroman.by", { port: 5020 });
+  await client.connectTCP("{host}", { port: {port} });
   client.setID(1); // unit ID 1..10
 
   // FC 3: 10 регистров HR с адреса 1
@@ -761,7 +778,7 @@ const ModbusRTU = require("modbus-serial");
 
 async function main() {
   const client = new ModbusRTU();
-  await client.connectTCP("modbustoolkit.electroman.by", { port: 5020 });
+  await client.connectTCP("{host}", { port: {port} });
   client.setID(1); // unit ID 1..10
 
   // FC 3: 10 holding registers from address 1
@@ -789,7 +806,7 @@ _EXAMPLE_CSHARP_RU = """\
 using System.Net.Sockets;
 using NModbus;
 
-var tcp = new TcpClient("modbustoolkit.electroman.by", 5020);
+var tcp = new TcpClient("{host}", {port});
 var client = new ModbusFactory().CreateMaster(tcp);
 
 // FC 3: 10 регистров HR слейва 1 (uint16) с адреса 1
@@ -810,7 +827,7 @@ _EXAMPLE_CSHARP_EN = """\
 using System.Net.Sockets;
 using NModbus;
 
-var tcp = new TcpClient("modbustoolkit.electroman.by", 5020);
+var tcp = new TcpClient("{host}", {port});
 var client = new ModbusFactory().CreateMaster(tcp);
 
 // FC 3: read 10 holding registers of slave 1 (uint16) from address 1
@@ -826,12 +843,16 @@ client.WriteSingleRegister(1, 1, 42);
 """
 
 _MT_INTRO_RU = (
-    "Десктопный клиент того же проекта, что и этот сервер. Создайте Modbus TCP "
-    "соединение к стенду и проверьте клиентский код на живых данных."
+    "ModbusToolkit - отдельный десктопный Modbus-клиент того же автора, "
+    "Modbus Sandbox к нему не привязан и работает с любым клиентом. Создайте "
+    "Modbus TCP соединение к песочнице и проверьте клиентский код на живых "
+    "данных."
 )
 _MT_INTRO_EN = (
-    "The desktop client of the same project as this server. Create a Modbus "
-    "TCP connection to the bench and test your client code against live data."
+    "ModbusToolkit is a separate desktop Modbus client by the same author; "
+    "Modbus Sandbox is not tied to it and works with any client. Create a "
+    "Modbus TCP connection to the sandbox and test your client code against "
+    "live data."
 )
 _MT_LINKS_RU = (
     f'Скачать ModbusToolkit можно на <a href="{PRODUCT_URL}">modbustoolkit.electroman.by</a>. '
@@ -865,20 +886,26 @@ def _example_block(title: str, code_id: str, code: str, lang: Lang, language: st
     )
 
 
-def _examples_section(lang: Lang) -> str:
+def _examples_section(host: str, port: int, lang: Lang) -> str:
     """Секция примеров на «Документации» (TASK-752).
 
     В первую очередь - подключение из десктопного ModbusToolkit (тот же
     продукт, что и сервер), затем сниппеты кода для pymodbus, modbus-serial
     и NModbus; кнопки копирования обслуживает `static/examples.js`.
+    Хост и порт - публичные (`MODBUS_PUBLIC_HOST`, `MODBUS_TCP_PORT`), как
+    на «Обзоре»; код экранирует `_example_block`.
     """
+
+    def code(text_ru: str, text_en: str) -> str:
+        return _with_endpoint(t(lang, text_ru, text_en), host, port)
+
     return (
         f"<h3>{t(lang, 'Подключение из ModbusToolkit', 'Connect from ModbusToolkit')}</h3>\n"
         f"<p>{t(lang, _MT_INTRO_RU, _MT_INTRO_EN)}</p>\n"
         "<ol>\n"
         f"  <li>{t(lang, 'Создайте соединение Modbus TCP: хост', 'Create a Modbus TCP connection: host')} "
-        f"<code>modbustoolkit.electroman.by</code>, "
-        f"{t(lang, 'порт', 'port')} <code>5020</code>, Unit ID 1..10.</li>\n"
+        f"<code>{escape(host)}</code>, "
+        f"{t(lang, 'порт', 'port')} <code>{port}</code>, Unit ID 1..10.</li>\n"
         f"  <li>{t(lang, 'Прочитайте 10 регистров HR слейва 1 функцией 3 с адреса 1. Формат значений slave 1 - uint16.', 'Read 10 holding registers of slave 1 with function 3 from address 1. Slave 1 values use the uint16 format.')}</li>\n"
         f"  <li>{t(lang, 'Запишите значение функцией 6 и убедитесь, что данные общие. Запись видна всем подключённым клиентам (shared last-write-wins).', 'Write a value with function 6 and see that the data is shared. Every connected client sees the write (shared last-write-wins).')}</li>\n"
         "</ol>\n"
@@ -888,26 +915,138 @@ def _examples_section(lang: Lang) -> str:
         + _example_block(
             "Python · pymodbus",
             "example-python",
-            t(lang, _EXAMPLE_PYTHON_RU, _EXAMPLE_PYTHON_EN),
+            code(_EXAMPLE_PYTHON_RU, _EXAMPLE_PYTHON_EN),
             lang,
             "python",
         )
         + _example_block(
             "Node.js · modbus-serial",
             "example-nodejs",
-            t(lang, _EXAMPLE_NODEJS_RU, _EXAMPLE_NODEJS_EN),
+            code(_EXAMPLE_NODEJS_RU, _EXAMPLE_NODEJS_EN),
             lang,
             "javascript",
         )
         + _example_block(
             "C# · NModbus",
             "example-csharp",
-            t(lang, _EXAMPLE_CSHARP_RU, _EXAMPLE_CSHARP_EN),
+            code(_EXAMPLE_CSHARP_RU, _EXAMPLE_CSHARP_EN),
             lang,
             "csharp",
         )
         + '<p id="example-status" role="status"></p>\n'
         + f'<script type="module" src="/static/examples.js?v={escape(_project_version())}"></script>'
+    )
+
+
+#: Команды раздела «Исходный код и свой сервер». Значения по умолчанию в
+#: подсказках совпадают с README и .env.example.
+_SOURCE_CLONE = f"git clone {GITHUB_CLONE_URL}\ncd modbustoolkit-sandbox\n"
+_SOURCE_UV_RU = """\
+# нужен Python 3.11+ и uv: https://docs.astral.sh/uv/
+uv sync
+uv run python -m app
+"""
+_SOURCE_UV_EN = """\
+# requires Python 3.11+ and uv: https://docs.astral.sh/uv/
+uv sync
+uv run python -m app
+"""
+_SOURCE_DOCKER_RU = """\
+cp .env.example .env   # поправьте MODBUS_PUBLIC_HOST и порты
+docker compose up -d --build
+"""
+_SOURCE_DOCKER_EN = """\
+cp .env.example .env   # adjust MODBUS_PUBLIC_HOST and the ports
+docker compose up -d --build
+"""
+_SOURCE_PIP_RU = """\
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\\Scripts\\activate
+pip install .
+python -m app
+"""
+_SOURCE_PIP_EN = """\
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\\Scripts\\activate
+pip install .
+python -m app
+"""
+_SOURCE_INTRO_RU = (
+    "Код сервера открыт и лежит на GitHub: "
+    f'<a href="{GITHUB_URL}">StarLeG/modbustoolkit-sandbox</a>. '
+    "Свою копию удобно поднять в закрытой сети стенда без доступа в "
+    "интернет или там, где инъекции и записи не должны задевать других "
+    "пользователей."
+)
+_SOURCE_INTRO_EN = (
+    "The server code is open and lives on GitHub: "
+    f'<a href="{GITHUB_URL}">StarLeG/modbustoolkit-sandbox</a>. '
+    "Run your own copy on an isolated bench network without internet "
+    "access, or wherever injections and writes must not affect other users."
+)
+_SOURCE_RUN_NOTE_RU = (
+    "После запуска web UI открывается на <code>http://127.0.0.1:8765</code>, "
+    "Modbus слушает порт <code>5020</code> на всех интерфейсах (переменные "
+    "<code>WEB_HOST</code>/<code>WEB_PORT</code> и <code>MODBUS_TCP_PORT</code>). "
+    "Задайте <code>MODBUS_PUBLIC_HOST</code> - IP или имя вашей машины, "
+    "иначе «Обзор» и генератор конфигов покажут адрес публичного сервера. "
+    "Файл <code>.env</code> читает только Docker Compose; при запуске через "
+    "<code>python -m app</code> переменные задаются в окружении. Все "
+    "переменные перечислены в <code>.env.example</code>, варианты с nginx и "
+    f'systemd - в <a href="{GITHUB_URL}/blob/main/docs/DEPLOY.md">docs/DEPLOY.md</a>.'
+)
+_SOURCE_RUN_NOTE_EN = (
+    "Once started, the web UI opens at <code>http://127.0.0.1:8765</code> "
+    "and Modbus listens on port <code>5020</code> on all interfaces "
+    "(variables <code>WEB_HOST</code>/<code>WEB_PORT</code> and "
+    "<code>MODBUS_TCP_PORT</code>). Set <code>MODBUS_PUBLIC_HOST</code> to "
+    "your machine's IP or name, otherwise «Overview» and the config "
+    "generator show the public server address. Only Docker Compose reads "
+    "the <code>.env</code> file; with <code>python -m app</code> set the "
+    "variables in the environment. All variables are listed in "
+    "<code>.env.example</code>, nginx and systemd setups are in "
+    f'<a href="{GITHUB_URL}/blob/main/docs/DEPLOY.md">docs/DEPLOY.md</a>.'
+)
+
+
+def _source_section(lang: Lang) -> str:
+    """Раздел «Исходный код и свой сервер»: ссылка на GitHub, клонирование, запуск.
+
+    Блоки команд оформлены как примеры кода: подсветка и кнопки копирования
+    (`static/examples.js` подключён секцией примеров выше).
+    """
+    return (
+        f"<h3>{t(lang, 'Исходный код и свой сервер', 'Source code and your own server')}</h3>\n"
+        f"<p>{t(lang, _SOURCE_INTRO_RU, _SOURCE_INTRO_EN)}</p>\n"
+        + _example_block(
+            t(lang, "1. Клонировать репозиторий", "1. Clone the repository"),
+            "source-clone",
+            _SOURCE_CLONE,
+            lang,
+            "bash",
+        )
+        + _example_block(
+            t(lang, "2. Запустить через uv (рекомендуется)", "2. Run with uv (recommended)"),
+            "source-uv",
+            t(lang, _SOURCE_UV_RU, _SOURCE_UV_EN),
+            lang,
+            "bash",
+        )
+        + _example_block(
+            t(lang, "…или в Docker", "…or in Docker"),
+            "source-docker",
+            t(lang, _SOURCE_DOCKER_RU, _SOURCE_DOCKER_EN),
+            lang,
+            "bash",
+        )
+        + _example_block(
+            t(lang, "…или через pip, без uv", "…or with pip, without uv"),
+            "source-pip",
+            t(lang, _SOURCE_PIP_RU, _SOURCE_PIP_EN),
+            lang,
+            "bash",
+        )
+        + f'<p class="note">{t(lang, _SOURCE_RUN_NOTE_RU, _SOURCE_RUN_NOTE_EN)}</p>\n'
     )
 
 
@@ -1374,6 +1513,38 @@ _INJ_NOTE_EN = (
     "them all with the \"Clear injections\" button."
 )
 
+#: Правила работы с инъекциями: они общие, и сбой получат все клиенты слейва.
+#: Метку `{ttl}` заполняет `INJECTION_MAX_TTL_S` из конфига.
+_INJ_RULES_RU = (
+    "<p><strong>Инъекции общие для всех.</strong> Сбой получит каждый, кто "
+    "сейчас опрашивает выбранный слейв. Чтобы не устроить кому-то учебную "
+    "аварию:</p>\n"
+    "<ul>\n"
+    "<li>задавайте короткий TTL. Пустое поле означает максимум, {ttl} с, "
+    "после этого инъекция снимается сама;</li>\n"
+    "<li>сужайте цель до диапазона адресов, а не всего слейва;</li>\n"
+    "<li>закончили проверку - сразу снимите инъекцию кнопкой ✕ в списке "
+    "активных;</li>\n"
+    "<li>активные инъекции видны всем здесь и в «Журнале». Если чтение "
+    "вдруг начало сбоить, сначала загляните сюда.</li>\n"
+    "</ul>\n"
+)
+_INJ_RULES_EN = (
+    "<p><strong>Injections are shared by everyone.</strong> Every client "
+    "polling the selected slave right now gets the fault. To avoid staging "
+    "a drill outage for someone else:</p>\n"
+    "<ul>\n"
+    "<li>set a short TTL. An empty field means the maximum, {ttl} s, after "
+    "which the injection clears itself;</li>\n"
+    "<li>narrow the target to an address range instead of the whole "
+    "slave;</li>\n"
+    "<li>done testing - clear the injection right away with the ✕ button "
+    "in the active list;</li>\n"
+    "<li>active injections are visible to everyone here and in the "
+    "«Journal». If reads suddenly start failing, check here first.</li>\n"
+    "</ul>\n"
+)
+
 
 def _injections_body(config: Config, lang: Lang) -> str:
     """Страница «Инъекции ошибок» (TASK-743): форма добавления и список активных.
@@ -1384,9 +1555,12 @@ def _injections_body(config: Config, lang: Lang) -> str:
     В примечании подставляется реальный лимит TTL из конфига окружения.
     """
     slave_options = "".join(f"<option>{slave_id}</option>" for slave_id in SLAVE_SPECS)
-    note = t(lang, _INJ_NOTE_RU, _INJ_NOTE_EN).format(ttl=f"{config.INJECTION_MAX_TTL_S:g}")
+    ttl = f"{config.INJECTION_MAX_TTL_S:g}"
+    note = t(lang, _INJ_NOTE_RU, _INJ_NOTE_EN).format(ttl=ttl)
+    rules = t(lang, _INJ_RULES_RU, _INJ_RULES_EN).format(ttl=ttl)
     return (
         f'<p class="note">{note}</p>\n'
+        f'<div class="banner inj-rules" role="note">\n{rules}</div>\n'
         f"<h3>{t(lang, 'Добавить инъекцию', 'Add injection')}</h3>\n"
         '<div class="form-row">\n'
         f'  <label>{t(lang, "Тип", "Type")} <select id="inj-kind">\n'
@@ -1497,10 +1671,10 @@ def _footer(lang: Lang) -> str:
         "  </div>\n"
         '  <div class="foot-grid">\n'
         '    <div class="foot-group">\n'
-        f'      <span class="eyebrow">{t(lang, "Продукт", "Product")}</span>\n'
+        f'      <span class="eyebrow">{t(lang, "ModbusToolkit · отдельный клиент", "ModbusToolkit · separate client")}</span>\n'
         "      <ul>\n"
-        f'        <li><a href="{PRODUCT_URL}">{t(lang, "ModbusToolkit для Windows и Linux", "ModbusToolkit for Windows and Linux")}</a></li>\n'
-        f'        <li><a href="{PRODUCT_DOCS_URL}">{t(lang, "Документация продукта", "Product docs")}</a></li>\n'
+        f'        <li><a href="{PRODUCT_URL}">{t(lang, "Скачать для Windows и Linux", "Download for Windows and Linux")}</a></li>\n'
+        f'        <li><a href="{PRODUCT_DOCS_URL}">{t(lang, "Документация ModbusToolkit", "ModbusToolkit docs")}</a></li>\n'
         f'        <li><a href="{TELEGRAM_URL}">{t(lang, "Telegram-канал", "Telegram channel")}</a></li>\n'
         "      </ul>\n"
         "    </div>\n"
@@ -1512,10 +1686,11 @@ def _footer(lang: Lang) -> str:
         "      </ul>\n"
         "    </div>\n"
         '    <div class="foot-group">\n'
-        f'      <span class="eyebrow">{t(lang, "Этот сервер", "This server")}</span>\n'
+        f'      <span class="eyebrow">{t(lang, "Modbus Sandbox · этот сервер", "Modbus Sandbox · this server")}</span>\n'
         "      <ul>\n"
         f'        <li><a href="/api/docs">REST API (Swagger)</a></li>\n'
         f'        <li><a href="/docs">{t(lang, "Документация сервера", "Server docs")}</a></li>\n'
+        f'        <li><a href="{GITHUB_URL}">{t(lang, "Исходный код на GitHub", "Source code on GitHub")}</a></li>\n'
         "      </ul>\n"
         "    </div>\n"
         "  </div>\n"
@@ -1530,7 +1705,11 @@ def _shell(title: str, active: str, body: str, lang: Lang, extra_head: str = "")
         f"{t(lang, ru, en)}</a>"
         for href, ru, en in NAV_SECTIONS
     )
-    site = t(lang, "Публичный тестовый Modbus-TCP сервер", "Public Modbus-TCP test server")
+    site = t(
+        lang,
+        "Modbus Sandbox - публичный тестовый Modbus-TCP сервер",
+        "Modbus Sandbox - public Modbus-TCP test server",
+    )
     warning = escape(WARNING_BANNER if lang == "ru" else WARNING_BANNER_EN)
     return f"""<!DOCTYPE html>
 <html lang="{lang}">
