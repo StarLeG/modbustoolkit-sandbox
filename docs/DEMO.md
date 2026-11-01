@@ -1,8 +1,8 @@
 # Демо-сценарии для наладчиков
 
-Три проверки своего Modbus-клиента на живом сервере
-`modbustoolkit.electroman.by:5020`. Каждая занимает несколько минут,
-UI сервера открыт на [modbustoolkit.electroman.by](https://modbustoolkit.electroman.by).
+Три проверки своего Modbus-клиента на живом сервере Modbus Sandbox
+`modbus-sendbox.electroman.by:5020`. Каждая занимает несколько минут,
+UI сервера открыт на [modbus-sendbox.electroman.by](https://modbus-sendbox.electroman.by).
 
 Общее для всех сценариев: демо-слоты HR и витрины генераторов заблокированы
 для записи (вернётся exception 0x04), а свободные регистры общие - их может

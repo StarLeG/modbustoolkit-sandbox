@@ -24,7 +24,7 @@ class Config:
     MODBUS_TCP_PORT: int = 5020
     # Адрес, по которому клиенты подключаются снаружи (UI, генератор конфигов);
     # слушатель MODBUS_TCP_HOST обычно 0.0.0.0 и для клиента бесполезен.
-    MODBUS_PUBLIC_HOST: str = "modbustoolkit.electroman.by"
+    MODBUS_PUBLIC_HOST: str = "modbus-sendbox.electroman.by"
     MODBUS_MAX_CONN_PER_IP: int = 20
     MODBUS_MAX_WRITE_PER_SEC: int = 200
     WEB_MAX_WRITE_PER_MIN_PER_IP: int = 50

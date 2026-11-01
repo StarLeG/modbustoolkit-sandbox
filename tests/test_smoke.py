@@ -10,7 +10,7 @@ def test_config_defaults_match_env_table() -> None:
     cfg = Config()
     assert cfg.MODBUS_TCP_HOST == "0.0.0.0"
     assert cfg.MODBUS_TCP_PORT == 5020
-    assert cfg.MODBUS_PUBLIC_HOST == "modbustoolkit.electroman.by"
+    assert cfg.MODBUS_PUBLIC_HOST == "modbus-sendbox.electroman.by"
     assert cfg.MODBUS_MAX_CONN_PER_IP == 20
     assert cfg.MODBUS_MAX_WRITE_PER_SEC == 200
     assert cfg.WEB_MAX_WRITE_PER_MIN_PER_IP == 50

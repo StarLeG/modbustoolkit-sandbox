@@ -31,7 +31,7 @@ RUN uv sync --frozen --no-dev --no-editable
 FROM python:3.12-slim-bookworm
 
 LABEL org.opencontainers.image.title="modbus-test-server" \
-      org.opencontainers.image.description="Публичный тестовый Modbus-TCP сервер (modbustoolkit.electroman.by)"
+      org.opencontainers.image.description="Modbus Sandbox - публичный тестовый Modbus-TCP сервер (modbus-sendbox.electroman.by)"
 
 # Приложение работает под непривилегированным пользователем.
 RUN useradd --create-home --uid 10001 appuser

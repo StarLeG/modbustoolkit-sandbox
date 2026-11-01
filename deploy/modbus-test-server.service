@@ -10,7 +10,7 @@
 # Проверка живости: python3 /opt/modbus-test-server/scripts/healthcheck.py
 
 [Unit]
-Description=Modbus Test Server (modbustoolkit.electroman.by)
+Description=Modbus Sandbox - public Modbus-TCP test server (modbus-sendbox.electroman.by)
 After=network-online.target
 Wants=network-online.target
 

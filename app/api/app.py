@@ -53,8 +53,8 @@ def create_app(
     app = FastAPI(
         title="Modbus Sandbox API",
         description=(
-            "REST API публичного тестового Modbus-TCP сервера MODBUS·SANDBOX "
-            "(modbustoolkit.electroman.by). Сервер бесплатно эмулирует 10 "
+            "REST API Modbus Sandbox - публичного тестового Modbus-TCP "
+            "сервера. Сервер бесплатно эмулирует 10 "
             "устройств с unit ID от 1 до 10. Значения регистров живут в "
             "памяти и общие для всех подключённых пользователей, перезапуск "
             "сервера всё сбрасывает."

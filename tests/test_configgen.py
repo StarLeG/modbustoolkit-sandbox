@@ -85,7 +85,7 @@ def test_configgen_modbus_poll_card() -> None:
     content = body["content"]
     for fragment in (
         "Modbus Poll",
-        "modbustoolkit.electroman.by",
+        "modbus-sendbox.electroman.by",
         "5020",
         "Slave ID:   3",
         "Read Holding Registers (FC 3)",
@@ -155,7 +155,7 @@ def test_configgen_pymodbus_script_float_cdab() -> None:
     content = body["content"]
     for fragment in (
         "from pymodbus.client import ModbusTcpClient",
-        'HOST = "modbustoolkit.electroman.by"',
+        'HOST = "modbus-sendbox.electroman.by"',
         "PORT = 5020",
         "SLAVE = 7",
         "ADDRESS = 1",
@@ -221,14 +221,14 @@ def test_configgen_nodered_flow() -> None:
     flow = json.loads(body["content"])
     nodes = {node["type"]: node for node in flow}
     client_node = nodes["modbus-client"]
-    assert client_node["tcpHost"] == "modbustoolkit.electroman.by"
+    assert client_node["tcpHost"] == "modbus-sendbox.electroman.by"
     assert client_node["tcpPort"] == "5020"
     assert client_node["unitId"] == "6"
     payload = json.loads(nodes["inject"]["payload"])
     assert payload == {"fc": 4, "unitid": 6, "address": 3, "quantity": 2}  # float — 2 регистра
     getter = nodes["modbus-flex-getter"]
-    assert getter["server"] == "modbustoolkit-client"
-    assert "modbustoolkit-getter" in nodes["inject"]["wires"][0]
+    assert getter["server"] == "modbus-sandbox-client"
+    assert "modbus-sandbox-getter" in nodes["inject"]["wires"][0]
 
 
 # ---------------------------------------------------------------------- валидация

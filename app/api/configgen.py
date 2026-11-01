@@ -370,7 +370,7 @@ def _gen_nodered(target: ConfigTarget) -> str:
     }
     flow = [
         {
-            "id": "modbustoolkit-client",
+            "id": "modbus-sandbox-client",
             "type": "modbus-client",
             "name": f"{target.host}:{target.port}",
             "client": "tcp",
@@ -386,7 +386,7 @@ def _gen_nodered(target: ConfigTarget) -> str:
             "showErrors": False,
         },
         {
-            "id": "modbustoolkit-comment",
+            "id": "modbus-sandbox-comment",
             "type": "comment",
             "name": "Требуется node-red-contrib-modbus",
             "info": (
@@ -398,7 +398,7 @@ def _gen_nodered(target: ConfigTarget) -> str:
             "wires": [],
         },
         {
-            "id": "modbustoolkit-inject",
+            "id": "modbus-sandbox-inject",
             "type": "inject",
             "name": f"Опрос 1 с ({_FC_NAMES[target.area]})",
             "props": [{"p": "payload"}],
@@ -411,21 +411,21 @@ def _gen_nodered(target: ConfigTarget) -> str:
             "payloadType": "json",
             "x": 160,
             "y": 80,
-            "wires": [["modbustoolkit-getter"]],
+            "wires": [["modbus-sandbox-getter"]],
         },
         {
-            "id": "modbustoolkit-getter",
+            "id": "modbus-sandbox-getter",
             "type": "modbus-flex-getter",
             "name": f"Read slave {target.slave} addr {target.address}",
-            "server": "modbustoolkit-client",
+            "server": "modbus-sandbox-client",
             "showStatusActivities": False,
             "showErrors": False,
             "x": 400,
             "y": 80,
-            "wires": [["modbustoolkit-debug"], []],
+            "wires": [["modbus-sandbox-debug"], []],
         },
         {
-            "id": "modbustoolkit-debug",
+            "id": "modbus-sandbox-debug",
             "type": "debug",
             "name": "Ответ Modbus",
             "active": True,

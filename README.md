@@ -7,11 +7,11 @@
   <img src="https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white" alt="Python 3.11 и новее">
   <img src="https://img.shields.io/badge/pymodbus-async-35d0b0" alt="pymodbus async">
   <img src="https://img.shields.io/badge/FastAPI-REST%20%2B%20WebSocket-009688?logo=fastapi&logoColor=white" alt="FastAPI">
-  <a href="https://modbustoolkit.electroman.by"><img src="https://img.shields.io/badge/demo-modbustoolkit.electroman.by-35d0b0" alt="Live demo"></a>
+  <a href="https://modbus-sendbox.electroman.by"><img src="https://img.shields.io/badge/demo-modbus--sendbox.electroman.by-35d0b0" alt="Live demo"></a>
 </p>
 
 <p align="center">
-  <b>Живой Modbus-TCP сервер, к которому можно подключиться прямо сейчас.</b><br>
+  <b>Modbus Sandbox - живой Modbus-TCP сервер, к которому можно подключиться прямо сейчас.</b><br>
   Регистры меняются сами, ошибки инжектятся по кнопке, ничего ставить не нужно.
 </p>
 
@@ -19,18 +19,18 @@
 
 | Параметр | Значение |
 |---|---|
-| Хост | `modbustoolkit.electroman.by` |
+| Хост | `modbus-sendbox.electroman.by` |
 | Порт | `5020` |
 | Unit ID | `1..10` (slave 10 отдаёт только input registers) |
 | Функции | `1, 2, 3, 4, 5, 6, 16`, остальные получают Illegal Function |
-| Web UI | [modbustoolkit.electroman.by](https://modbustoolkit.electroman.by) |
+| Web UI | [modbus-sendbox.electroman.by](https://modbus-sendbox.electroman.by) |
 
 Проверка из Python:
 
 ```python
 from pymodbus.client import ModbusTcpClient
 
-client = ModbusTcpClient("modbustoolkit.electroman.by", port=5020)
+client = ModbusTcpClient("modbus-sendbox.electroman.by", port=5020)
 client.connect()
 print(client.read_input_registers(1, count=8, device_id=1).registers)
 client.close()
