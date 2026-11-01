@@ -283,6 +283,20 @@ def test_api_docs_moved_under_api() -> None:
         assert "swagger-ui" not in html
 
 
+def test_openapi_lists_only_rest_api() -> None:
+    """HTML-страницы сайта не попадают в OpenAPI: в Swagger нет секции «default»."""
+    with _client() as client:
+        schema = client.get("/api/openapi.json").json()
+    paths = schema["paths"]
+    for page in ("/", "/registers", "/behaviors", "/timezones", "/injections",
+                 "/journal", "/tools", "/docs", "/api/docs"):
+        assert page not in paths, page
+    assert "/api/modbus/state" in paths
+    for path, operations in paths.items():
+        for operation in operations.values():
+            assert operation.get("tags"), f"{path}: операция без тега попадёт в «default»"
+
+
 def test_api_docs_page_wraps_swagger_in_site_shell() -> None:
     """Swagger UI — своя страница в оболочке сайта: бренд, навигация, тёмная тема."""
     with _client() as client:

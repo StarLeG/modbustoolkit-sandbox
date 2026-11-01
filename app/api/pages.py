@@ -24,7 +24,8 @@ from app.modbus.config import Config
 from app.modbus.slave10 import ZONE_COUNT, zone_offset_hours
 from app.modbus.types import AREAS, SLAVE_SPECS, AddressRange, RegisterFormat
 
-pages_router = APIRouter()
+#: HTML-страницы сайта - не REST API, в схему OpenAPI (и Swagger) не попадают.
+pages_router = APIRouter(include_in_schema=False)
 
 #: Обязательный текст плашки (TASK-504): многопользовательский режим и перезапись.
 WARNING_BANNER = (
