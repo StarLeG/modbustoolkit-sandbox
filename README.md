@@ -104,6 +104,8 @@ float DCBA) собраны в [docs/DEMO.md](docs/DEMO.md).
 Локально:
 
 ```bash
+git clone https://github.com/StarLeG/modbustoolkit-sandbox.git
+cd modbustoolkit-sandbox
 uv sync
 uv run python -m app
 ```

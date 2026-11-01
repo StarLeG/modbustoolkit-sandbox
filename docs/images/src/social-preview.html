@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<!--
+  Исходник docs/images/social-preview.png (1280x640). Шрифты и цвета - из app/api/static.
+  Пересборка (из корня репозитория):
+    chrome --headless=new --hide-scrollbars --allow-file-access-from-files
+      --force-device-scale-factor=1 --window-size=1280,640
+      --screenshot=docs/images/social-preview.png docs/images/src/social-preview.html
+  (одной строкой; Chrome дописывает PNG с задержкой в пару секунд)
+  Адрес на картинке меняется в блоке .addr.
+-->
+<meta charset="utf-8">
+<style>
+  @font-face{font-family:'Oswald';font-weight:600;src:url(../../../app/api/static/fonts/oswald-600-latin.woff2) format('woff2');}
+  @font-face{font-family:'IBM Plex Sans';font-weight:400;src:url(../../../app/api/static/fonts/ibm-plex-sans-400-cyrillic.woff2) format('woff2');unicode-range:U+0400-045F;}
+  @font-face{font-family:'IBM Plex Sans';font-weight:400;src:url(../../../app/api/static/fonts/ibm-plex-sans-400-latin.woff2) format('woff2');unicode-range:U+0000-00FF,U+2000-206F;}
+  @font-face{font-family:'IBM Plex Mono';font-weight:400;src:url(../../../app/api/static/fonts/ibm-plex-mono-400-cyrillic.woff2) format('woff2');unicode-range:U+0400-045F;}
+  @font-face{font-family:'IBM Plex Mono';font-weight:400;src:url(../../../app/api/static/fonts/ibm-plex-mono-400-latin.woff2) format('woff2');unicode-range:U+0000-00FF,U+2000-206F;}
+  @font-face{font-family:'IBM Plex Mono';font-weight:500;src:url(../../../app/api/static/fonts/ibm-plex-mono-500-latin.woff2) format('woff2');unicode-range:U+0000-00FF,U+2000-206F;}
+
+  :root{
+    --bg:#0a0e12; --surface:#12181e; --surface-2:#171f26; --border:#29333c;
+    --text:#e8f0f0; --text-muted:#8a99a3; --accent:#35d0b0; --warn:#f0a84d;
+  }
+  html,body{margin:0;padding:0;}
+  body{
+    width:1280px;height:640px;overflow:hidden;position:relative;
+    background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',sans-serif;
+  }
+  .bg{
+    position:absolute;inset:0;
+    background:
+      radial-gradient(ellipse 520px 380px at 1280px 0, rgba(53,208,176,.16), transparent 70%),
+      linear-gradient(rgba(255,255,255,.028) 1px, transparent 1px) 0 0/48px 48px,
+      linear-gradient(90deg, rgba(255,255,255,.028) 1px, transparent 1px) 0 0/48px 48px;
+    -webkit-mask-image:linear-gradient(90deg, rgba(0,0,0,.35), #000 65%);
+  }
+  .left{position:absolute;left:80px;top:72px;width:720px;}
+  .pill{
+    display:inline-block;border:2px solid var(--accent);border-radius:999px;
+    padding:8px 21px;color:var(--accent);font-family:'IBM Plex Mono',monospace;
+    font-size:18px;letter-spacing:.15em;text-transform:uppercase;line-height:22px;
+  }
+  h1{
+    margin:28px 0 0;font-family:'Oswald',sans-serif;font-weight:600;
+    font-size:92px;line-height:96px;letter-spacing:.01em;color:var(--text);
+  }
+  h1 .dot{color:var(--accent);}
+  .sub{
+    margin:18px 0 0;font-size:34px;line-height:47px;color:var(--text-muted);
+  }
+  .sub b{color:var(--text);font-weight:400;}
+  .addr{
+    position:absolute;left:80px;top:505px;height:70px;box-sizing:border-box;
+    display:flex;align-items:center;padding:0 28px 0 28px;
+    background:var(--surface);border:1px solid var(--border);border-left:6px solid var(--accent);
+    border-radius:3px;font-family:'IBM Plex Mono',monospace;font-size:29px;color:var(--text);
+  }
+  .addr .port{color:var(--accent);}
+  .card{
+    position:absolute;left:857px;top:236px;width:342px;box-sizing:border-box;
+    background:var(--surface);border:1px solid var(--border);border-radius:5px;overflow:hidden;
+    font-family:'IBM Plex Mono',monospace;
+  }
+  .card .head{
+    display:flex;justify-content:space-between;align-items:center;height:50px;
+    padding:0 22px;background:var(--surface-2);border-bottom:1px solid var(--border);
+    color:var(--text-muted);font-size:15px;letter-spacing:.14em;
+  }
+  .row{
+    display:flex;justify-content:space-between;align-items:center;height:55px;
+    padding:0 22px;border-bottom:1px solid var(--border);font-size:20px;
+  }
+  .row:last-child{border-bottom:0;}
+  .row .v{color:var(--accent);}
+  .row .v.w{color:var(--warn);}
+</style>
+</head>
+<body>
+  <div class="bg"></div>
+  <div class="left">
+    <span class="pill">Бесплатный публичный сервер</span>
+    <h1>MODBUS<span class="dot">·</span>SANDBOX</h1>
+    <p class="sub">Живой <b>Modbus-TCP сервер</b> для проверки<br>клиентов: 10 unit ID, генераторы значений,<br>инъекции ошибок.</p>
+  </div>
+  <div class="addr">modbus-sendbox.electroman.by<span class="port">:5020</span></div>
+  <div class="card">
+    <div class="head"><span>IR · SLAVE 6</span><span>FLOAT</span></div>
+    <div class="row"><span>3</span><span class="v">853.92</span></div>
+    <div class="row"><span>5</span><span class="v">471.89</span></div>
+    <div class="row"><span>9</span><span class="v">278.51</span></div>
+    <div class="row"><span>11</span><span class="v w">412</span></div>
+    <div class="row"><span>13</span><span class="v">515.74</span></div>
+  </div>
+</body>
+</html>
