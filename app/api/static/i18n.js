@@ -114,6 +114,8 @@
     "Запись отклонена ({status}): {detail}": "Write rejected ({status}): {detail}",
     "Ошибка записи: {error}": "Write error: {error}",
     "Нажмите, чтобы изменить (CL/HR общие, last-write-wins)": "Click to edit (CL/HR are shared, last-write-wins)",
+    "Пара регистров {a} и {b}: {a} = {wa}, {b} = {wb}": "Register pair {a} and {b}: {a} = {wa}, {b} = {wb}",
+    "Строка объединяет регистры {a} и {b} выбранным форматом; поведение настраивает регистр {a}, а регистр {b} скрыт - он виден своей строкой при 16-битном формате.": "The row merges registers {a} and {b} with the chosen format; the behavior configures register {a}, while register {b} is hidden - it has its own row in a 16-bit format.",
     "В избранное": "Add to favorites",
     "Тренд, 60 с": "Trend, 60 s",
     "Год": "Year",

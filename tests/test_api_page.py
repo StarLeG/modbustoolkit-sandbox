@@ -164,6 +164,27 @@ def test_registers_js_pair_span() -> None:
         assert fragment in js, fragment
 
 
+def test_registers_js_pair_hint() -> None:
+    """Подсказки пары N, N+1: тултип значения и пояснение в настройках поведения.
+
+    На slave 1 32-битная строка складывает два независимых регистра - без
+    подсказки значение вида (998 << 16) | 0 выглядит как косяк формата.
+    """
+    with _client() as client:
+        response = client.get("/static/registers.js")
+    js = response.text
+    for fragment in (
+        "pairOf",
+        "pairHint",
+        "valueTitle",
+        "Пара регистров {a} и {b}",
+        "cellValue.title = valueTitle(address)",
+        "cell.title = valueTitle(address)",
+        "поведение настраивает регистр {a}",
+    ):
+        assert fragment in js, fragment
+
+
 def test_registers_page_has_tag_column() -> None:
     """Колонка «Тег» после адреса: имя сигнала вместо голого номера."""
     with _client() as client:

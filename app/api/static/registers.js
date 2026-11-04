@@ -212,6 +212,38 @@ function pairAvailable(address) {
   return state.addresses.includes(address + 1);
 }
 
+// Строка с 32-битным форматом объединяет пару регистров N, N+1 (null — не пара)
+function pairOf(address) {
+  if (codeWidth(rowCode(address)) !== 32 || !pairAvailable(address)) return null;
+  return { a: address, b: address + 1 };
+}
+
+// Подсказка о паре: слова самих регистров за скомпонованным значением строки
+function pairHint(address) {
+  const pair = pairOf(address);
+  if (!pair) return "";
+  const first = wireAt(pair.a);
+  const second = wireAt(pair.b);
+  if (first === null || second === null) return "";
+  return window.t("Пара регистров {a} и {b}: {a} = {wa}, {b} = {wb}", {
+    a: pair.a,
+    b: pair.b,
+    wa: first,
+    wb: second,
+  });
+}
+
+// Подсказки ячейки «Значение»: пара регистров и условие правки
+function valueTitle(address) {
+  const hints = [];
+  const pair = pairHint(address);
+  if (pair) hints.push(pair);
+  if (editable()) {
+    hints.push(window.t("Нажмите, чтобы изменить (CL/HR общие, last-write-wins)"));
+  }
+  return hints.join(" · ");
+}
+
 // ---------- формат строки: выбор пользователя ----------
 
 function loadFormats() {
@@ -493,6 +525,18 @@ function buildBehaviorEditor(address) {
   actions.appendChild(apply);
   actions.appendChild(reset);
   actions.appendChild(close);
+  // На slave 1 32-битный формат строки — пара независимых регистров N, N+1:
+  // поведение настраивает только N, а N+1 живёт своей строкой при 16-битном формате
+  const pair = pairOf(address);
+  if (pair && slotOf(address).width === 16) {
+    const hint = document.createElement("p");
+    hint.className = "note";
+    hint.textContent = window.t(
+      "Строка объединяет регистры {a} и {b} выбранным форматом; поведение настраивает регистр {a}, а регистр {b} скрыт - он виден своей строкой при 16-битном формате.",
+      { a: pair.a, b: pair.b }
+    );
+    cell.appendChild(hint);
+  }
   cell.appendChild(paramsBox);
   cell.appendChild(actions);
   row.appendChild(cell);
@@ -995,9 +1039,9 @@ function renderTable() {
     const cellValue = document.createElement("td");
     cellValue.id = "reg-cell-" + address;
     cellValue.textContent = formatDisplay(address);
+    cellValue.title = valueTitle(address); // пара N, N+1 + условие правки
     if (editable()) {
       cellValue.classList.add("editable");
-      cellValue.title = window.t("Нажмите, чтобы изменить (CL/HR общие, last-write-wins)");
       cellValue.addEventListener("click", function () {
         if (cellValue.classList.contains("editing")) return; // клик по редактору не перезапускает правку
         startEdit(address);
@@ -1087,6 +1131,7 @@ function applyFrame(frame) {
     const cell = el("reg-cell-" + address);
     if (cell && !cell.classList.contains("editing")) {
       cell.textContent = formatDisplay(address);
+      cell.title = valueTitle(address); // слова пары меняются с каждым кадром
     }
   }
 }
