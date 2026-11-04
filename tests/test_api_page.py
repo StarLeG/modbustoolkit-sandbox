@@ -89,11 +89,15 @@ def test_registers_js_served() -> None:
     assert "/api/modbus/state" in response.text
 
 
-def test_registers_page_has_format_select() -> None:
-    """Переключатель форматов значений на карте регистров (TASK-712)."""
+def test_registers_page_has_format_column() -> None:
+    """Формат значения — по строке таблицы, глобального селекта больше нет."""
     with _client() as client:
         response = client.get("/registers")
-    assert 'id="reg-format"' in response.text
+    html = response.text
+    assert 'id="reg-format"' not in html
+    assert "Формат" in html  # колонка таблицы
+    assert "uint32/int32/float32" in html  # подпись про 32-битные пары N, N+1
+    assert "не показывается" in html  # поглощённый парой адрес убран из таблицы
 
 
 def test_registers_js_pagination() -> None:
@@ -113,12 +117,112 @@ def test_registers_js_pagination() -> None:
 
 
 def test_registers_js_formats_values() -> None:
-    """Форматирование HEX / DEC / signed / FLOAT по формату слейва (TASK-712)."""
+    """Форматы строки: uint16/int16/HEX16 и 32-битные uint32/int32/float32/HEX32."""
     with _client() as client:
         response = client.get("/static/registers.js")
     js = response.text
-    for fragment in ("DEC (знаковый)", "floatToBits", "bitsToFloat", "toSigned", '"hex"'):
+    for fragment in (
+        "floatToBits",
+        "bitsToFloat",
+        "toSigned",
+        "wordsToBits",
+        "bitsToWords",
+        "uint32_abcd",
+        "float32_dcba",
+        "hex32",
+    ):
         assert fragment in js, fragment
+
+
+def test_registers_js_wire_perm_matches_codec() -> None:
+    """WIRE_PERM в JS — зеркало перестановок app/modbus/codec.py (ABCD/CDAB/BADC/DCBA)."""
+    with _client() as client:
+        response = client.get("/static/registers.js")
+    js = response.text
+    for fragment in (
+        "ABCD: [0, 1, 2, 3]",
+        "CDAB: [2, 3, 0, 1]",
+        "BADC: [1, 0, 3, 2]",
+        "DCBA: [3, 2, 1, 0]",
+    ):
+        assert fragment in js, fragment
+
+
+def test_registers_js_pair_span() -> None:
+    """32-битный формат строки объединяет регистры N и N+1, выбор хранится в браузере."""
+    with _client() as client:
+        response = client.get("/static/registers.js")
+    js = response.text
+    for fragment in (
+        "pairWords",
+        "wireAt",
+        "pairAvailable",
+        "modbus-reg-formats",
+        "slotOf",
+        "visibleRows",
+    ):
+        assert fragment in js, fragment
+
+
+def test_registers_page_has_tag_column() -> None:
+    """Колонка «Тег» после адреса: имя сигнала вместо голого номера."""
+    with _client() as client:
+        response = client.get("/registers")
+    html = response.text
+    assert "<th>Тег</th>" in html  # шапка таблицы, сразу после адреса
+    assert "называет регистр" in html  # подпись под таблицей
+
+
+def test_registers_js_tags() -> None:
+    """Теги строк: поведения slave 1..9 из REST и метрики slave 10 (HRIR_SPEC)."""
+    with _client() as client:
+        response = client.get("/static/registers.js")
+    js = response.text
+    for fragment in (
+        "tagText",
+        "slave10Tag",
+        "KIND_RU",
+        "/api/modbus/behaviors",
+        "Unix timestamp",
+        "Смещение UTC",
+    ):
+        assert fragment in js, fragment
+
+
+def test_registers_page_has_trend_column() -> None:
+    """Колонка «Тренд, 60 с» — спарклайн строки в карте регистров."""
+    with _client() as client:
+        response = client.get("/registers")
+    html = response.text
+    assert "Тренд, 60 с" in html  # шапка таблицы
+    assert "за последнюю минуту" in html  # подпись под таблицей
+
+
+def test_registers_js_trend() -> None:
+    """JS карты регистров копит историю 60 с и рисует спарклайны на canvas."""
+    with _client() as client:
+        response = client.get("/static/registers.js")
+    js = response.text
+    for fragment in (
+        "HISTORY_S = 60",
+        "reg-trend",
+        "seriesFor",
+        "drawSpark",
+        "getContext",
+        "state.history.clear",
+    ):
+        assert fragment in js, fragment
+
+
+def test_registers_js_updates_dependent_cells() -> None:
+    """Каждый WS-кадр перерисовывает окно целиком: у строки-продолжения
+    (301 — младшее слово слота 300) своего ключа значения в кадре нет,
+    и без явной перерисовки её ячейка зависала бы."""
+    with _client() as client:
+        response = client.get("/static/registers.js")
+    js = response.text
+    # renderTable, drawTrends и applyFrame проходят по visibleRows()
+    assert js.count("of visibleRows()") >= 3
 
 
 def test_registers_page_has_edit_warning() -> None:

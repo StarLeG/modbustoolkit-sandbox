@@ -312,7 +312,15 @@ table.values td select{width:7rem;}
 /* Фиксированные крайние колонки: правка значения не меняет ширину столбцов. */
 table.reg-map{table-layout:fixed;}
 table.reg-map th:first-child,table.reg-map td:first-child{width:7rem;}
+table.reg-map th:nth-child(2),table.reg-map td:nth-child(2){width:12rem;}
+table.reg-map th:nth-child(3),table.reg-map td:nth-child(3){width:9.5rem;}
+table.reg-map th:nth-child(4),table.reg-map td:nth-child(4){width:13rem;}
 table.reg-map th:last-child,table.reg-map td:last-child{width:5rem;}
+table.reg-map td select{width:100%;}
+table.reg-map td .reg-bits{color:var(--text-muted);}
+table.reg-map td.tag{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+table.reg-map td.trend{padding:3px 8px;vertical-align:middle;}
+table.reg-map canvas.reg-trend{display:block;width:100%;height:28px;color:var(--accent-deep);}
 #chart-canvas{width:100%;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);}
 
 /* ---------- часовые пояса ---------- */
