@@ -243,7 +243,7 @@ def find_injection(
     spec = SLAVE_SPECS.get(slave)
     if spec is None:
         return None
-    touched = {binding[2] for binding in touched_bindings(slave, area, address, count)}
+    touched = {binding[2] for binding in touched_bindings(None, slave, area, address, count)}
     if not touched:
         return None
     for injection in injections:

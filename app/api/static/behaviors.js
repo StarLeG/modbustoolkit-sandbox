@@ -9,6 +9,8 @@
 
 import {
   collectParams as collectFormParams,
+  DTYPE_WIDTH,
+  dtypesForFmt,
   fillParams,
   kindLabel,
   kindsForArea,
@@ -59,6 +61,46 @@ function renderKinds() {
   }
   if (kindsForArea(el("bh-area").value).includes(previous)) select.value = previous;
   renderParams();
+  renderDtypes();
+}
+
+// Селект типа значения (TASK-717): типы по сетке слейва (16-битная — все,
+// 32-битная — только 32-битные); у cl/di типа нет — селект пуст и заблокирован
+function renderDtypes() {
+  const select = el("bh-dtype");
+  const previous = select.value;
+  const area = el("bh-area").value;
+  select.textContent = "";
+  if (area !== "hr" && area !== "ir") {
+    const none = document.createElement("option");
+    none.value = "";
+    none.textContent = "—";
+    select.appendChild(none);
+    select.value = "";
+    select.disabled = true;
+    return;
+  }
+  select.disabled = false;
+  const spec = window.REGISTER_MAP[String(el("bh-slave").value)];
+  for (const dtype of dtypesForFmt(spec ? spec.fmt : "uint16")) {
+    const option = document.createElement("option");
+    option.value = dtype;
+    option.textContent = dtype;
+    select.appendChild(option);
+  }
+  if ([].some.call(select.options, function (option) { return option.value === previous; })) {
+    select.value = previous;
+  }
+}
+
+// Выбранный тип формы: null для cl/di (сервер принимает dtype только у hr/ir)
+function selectedDtype() {
+  return el("bh-dtype").value || null;
+}
+
+// Ширина выбранного типа в регистрах: 32-битный — пара N, N+1
+function selectedWidth() {
+  return DTYPE_WIDTH[selectedDtype()] || 1;
 }
 
 // Поля параметров выбранного kind'а в контейнер #bh-params (общая схема —
@@ -92,7 +134,7 @@ async function apply() {
       {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kind: kind, params: params, locked: locked }),
+        body: JSON.stringify({ kind: kind, params: params, locked: locked, dtype: selectedDtype() }),
       }
     );
     const body = await response.json();
@@ -110,15 +152,24 @@ async function apply() {
   }
 }
 
-// Адреса сетки значений области в диапазоне from..to (TASK-723): у 32-битных
-// форматов значения идут с шагом 2 (1, 3, …, 1023) — берём только существующие.
+// Адреса сетки значений области в диапазоне from..to (TASK-723, 717): у
+// 32-битных форматов значения идут с шагом 2 (1, 3, …, 1023) — берём только
+// существующие. Ширина выбранного типа задаёт геометрию: 32-битный тип на
+// slave 1 занимает пару N, N+1, поэтому в диапазон идут только головы пар
+// (младшие регистры покрываются предыдущей головой).
 function rangeAddresses(area, from, to) {
   const spec = window.REGISTER_MAP[String(el("bh-slave").value)];
   const ranges = (spec && spec.areas[area]) || [];
+  const width = selectedWidth();
   const addresses = [];
+  let coveredTo = 0; // последний регистр, занятый предыдущей головой пары
   for (const [start, stop, step] of ranges) {
     for (let address = start; address <= stop; address += step) {
-      if (address >= from && address <= to) addresses.push(address);
+      if (address < from || address > to) continue;
+      if (address <= coveredTo) continue; // младший регистр пары уже занят
+      if (address + width - 1 > stop + (step - 1)) continue; // пара не влезает в карту
+      addresses.push(address);
+      coveredTo = address + width - 1;
     }
   }
   return addresses;
@@ -163,6 +214,7 @@ async function applyRange() {
       kind: kind,
       params: params,
       locked: locked,
+      dtype: selectedDtype(),
     };
   });
   status.textContent = window.t("Применение к {count} адресам…", { count: items.length });
@@ -230,7 +282,7 @@ async function refreshList() {
     if (body.items.length === 0) {
       const row = document.createElement("tr");
       const cell = document.createElement("td");
-      cell.colSpan = 6;
+      cell.colSpan = 7;
       cell.textContent = window.t("Переопределений нет - все привязки по умолчанию.");
       row.appendChild(cell);
       list.appendChild(row);
@@ -243,6 +295,7 @@ async function refreshList() {
         item.area,
         String(item.address),
         item.kind,
+        item.dtype || "—", // эффективный тип: у cl/di типа нет
         JSON.stringify(item.params),
         item.locked ? window.t("да") : window.t("нет"),
       ];
@@ -260,6 +313,7 @@ async function refreshList() {
 
 function init() {
   el("bh-area").addEventListener("change", renderKinds);
+  el("bh-slave").addEventListener("change", renderDtypes); // сетка слейва меняет список типов
   el("bh-kind").addEventListener("change", renderParams);
   el("bh-apply").addEventListener("click", apply);
   el("bh-apply-range").addEventListener("click", applyRange);

@@ -25,6 +25,20 @@ export function kindsForArea(area) {
   return area === "hr" || area === "ir" ? NUMERIC_KINDS : DISCRETE_KINDS;
 }
 
+// Типы значения (TASK-717): тип выбирается в настройках поведения, он же
+// задаёт геометрию (uint16/int16 — регистр N, 32-битные — пара N, N+1) и
+// математику генератора (float32 — дробные, целые — в диапазоне типа).
+export const VALUE_DTYPES = ["uint16", "int16", "uint32", "int32", "float32"];
+
+// Ширина типа в регистрах значений
+export const DTYPE_WIDTH = { uint16: 1, int16: 1, uint32: 2, int32: 2, float32: 2 };
+
+// Типы, доступные слейву: 16-битная сетка (slave 1) — все, 32-битная
+// (слейвы 2..9, слот уже пара регистров) — только 32-битные
+export function dtypesForFmt(fmt) {
+  return String(fmt).startsWith("uint16") ? VALUE_DTYPES : ["uint32", "int32", "float32"];
+}
+
 // Имена поведений — русские строки; перевод даёт i18n.js (window.t)
 export const KIND_RU = {
   constant: "константа",

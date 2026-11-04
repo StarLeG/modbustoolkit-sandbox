@@ -1,27 +1,28 @@
-// Карта регистров (TASK-711, 712): таблица адресов по слейву, live через WS.
+// Карта регистров (TASK-711, 712, 717): таблица адресов по слейву, live через WS.
 // Геометрия карты — window.REGISTER_MAP (серверный рендер из SLAVE_SPECS).
 // Пагинация — по 10 адресов: окно начинается с произвольного «Начального
 // адреса», кнопки «Назад»/«Вперёд» сдвигают окно на страницу, поле «Страница» —
-// быстрый переход по номеру. WS-подписка только на адреса видимого окна
-// (плюс следующий адрес — для 32-битной пары N, N+1 последней строки).
-// Формат значения выбирается в каждой строке: uint16/int16/HEX16 или
-// 32-битные uint32/int32/float32 × ABCD/CDAB/BADC/DCBA и HEX32; 32-битный
-// формат объединяет регистры N и N+1 (слот сетки слейвов 2..9 — то же самое).
-// Кадры несут логические значения по формату слейва, reinterpretation идёт на
-// клиенте через WIRE_PERM — зеркало перестановок app/modbus/codec.py.
-// Выбранный формат хранится в localStorage и переживает перезагрузку.
+// быстрый переход по номеру. WS-подписка только на адреса видимого окна.
+// Тип значения строки (колонка «Тип») задаётся в настройках поведения («⚙»):
+// uint16/int16 — один регистр N, 32-битные uint32/int32/float32 — пара N, N+1
+// (строка N+1 скрыта - младший регистр пары). Тип определяет и математику:
+// float32 даёт дробные значения, целые — в диапазоне типа. Кадры несут
+// логические значения по типу привязки, клиент их только форматирует
+// (float32 — 7 значащих цифр).
 // Колонка «Тег» — имя сигнала: поведение регистра (slave 1..9, конфиг из
 // REST /api/modbus/behaviors) либо метрика времени (slave 10, HRIR_SPEC).
 // Колонка «Поведение» (TASK-716) — выбор kind строкой и «⚙» с параметрами:
 // смена kind сразу ставит поведение (PUT /api/modbus/behaviors/...), «⚙»
-// открывает строку настроек (params + locked, «Сбросить к дефолту» — batch
+// открывает строку настроек (тип, params, locked, «Сбросить к дефолту» — batch
 // с remove:true). Поведения общие для всех пользователей; slave 10 — без них.
-// Колонка «Тренд, 60 с» — спарклайн строки в её формате: кольцевой буфер
-// сырых значений за 60 с, перерисовка раз в 500 мс.
+// Колонка «Тренд, 60 с» — спарклайн строки: кольцевой буфер значений за 60 с,
+// перерисовка раз в 500 мс.
 
 import {
   collectParams as collectFormParams,
   defaultParams,
+  DTYPE_WIDTH,
+  dtypesForFmt,
   fillParams,
   kindLabel,
   kindsForArea,
@@ -30,44 +31,8 @@ import {
 
 const PAGE_SIZE = 10;
 const RECONNECT_MAX_MS = 15000;
-const FORMATS_KEY = "modbus-reg-formats";
 const HISTORY_S = 60;
 const TREND_H = 28;
-
-// WIRE_PERM[order][i] — индекс байта значения (A=0, B=1, C=2, D=3),
-// попадающего в i-й байт на проводе (байты внутри регистра big-endian).
-const WIRE_PERM = {
-  ABCD: [0, 1, 2, 3],
-  CDAB: [2, 3, 0, 1],
-  BADC: [1, 0, 3, 2],
-  DCBA: [3, 2, 1, 0],
-};
-
-const FORMAT_GROUPS = [
-  [window.t("16 бит"), [["uint16", "uint16"], ["int16", "int16"], ["hex16", "HEX16"]]],
-  ["uint32", [
-    ["uint32_abcd", "uint32 ABCD"], ["uint32_cdab", "uint32 CDAB"],
-    ["uint32_badc", "uint32 BADC"], ["uint32_dcba", "uint32 DCBA"],
-  ]],
-  ["int32", [
-    ["int32_abcd", "int32 ABCD"], ["int32_cdab", "int32 CDAB"],
-    ["int32_badc", "int32 BADC"], ["int32_dcba", "int32 DCBA"],
-  ]],
-  ["float32", [
-    ["float32_abcd", "float32 ABCD"], ["float32_cdab", "float32 CDAB"],
-    ["float32_badc", "float32 BADC"], ["float32_dcba", "float32 DCBA"],
-  ]],
-  ["HEX", [["hex32", "HEX32"]]],
-];
-
-const FORMAT_LABELS = {};
-const FORMAT_SET = new Set();
-for (const [, items] of FORMAT_GROUPS) {
-  for (const [code, label] of items) {
-    FORMAT_LABELS[code] = label;
-    FORMAT_SET.add(code);
-  }
-}
 
 const map = window.REGISTER_MAP;
 
@@ -76,7 +41,7 @@ const state = {
   area: null,
   addresses: [],
   values: new Map(),
-  history: new Map(), // адрес → [{t, v}] сырые значения за HISTORY_S
+  history: new Map(), // адрес → [{t, v}] значения за HISTORY_S
   behaviors: new Map(), // адрес → поведение из REST (имя для тега строки)
   bhEdit: null, // адрес строки с открытой формой настроек поведения
   start: 0, // индекс первого отображаемого адреса
@@ -97,139 +62,54 @@ function areaList() {
   return Object.keys(spec().areas);
 }
 
-function fmtKind() {
-  const fmt = spec().fmt;
-  if (fmt.startsWith("uint16")) return "uint16";
-  if (fmt.startsWith("uint32")) return "uint32";
-  return "float";
+// ---------- тип значения строки (TASK-717) ----------
+
+function behaviorAt(address) {
+  return state.behaviors.get(address) || null;
 }
 
-// ---------- кодек на клиенте: значения ↔ слова регистров ----------
-
-function floatToBits(value) {
-  const buffer = new ArrayBuffer(4);
-  new DataView(buffer).setFloat32(0, value);
-  return new DataView(buffer).getUint32(0);
+// Эффективный тип строки: тип задаётся в настройках поведения («⚙») и ведёт
+// математику с геометрией. cl/di — биты (типа нет), slave 10 — uint16,
+// метрики; IR 300 — uint32 timestamp (HRIR_SPEC.md).
+function rowType(address) {
+  if (state.area === "cl" || state.area === "di") return null;
+  if (state.slave === 10) return address === 300 ? "uint32" : "uint16";
+  const item = behaviorAt(address);
+  return item && item.dtype ? item.dtype : null;
 }
 
-function bitsToFloat(bits) {
-  const buffer = new ArrayBuffer(4);
-  new DataView(buffer).setUint32(0, bits >>> 0);
-  return new DataView(buffer).getFloat32(0);
+// Колонка «Тип»: биты — 0/1, hr/ir — имя типа («…» пока конфиг не загружен)
+function typeLabel(address) {
+  if (state.area === "cl" || state.area === "di") return "0/1";
+  return rowType(address) || "…";
 }
 
-function toSigned(bits, width) {
-  const limit = width === 16 ? 0x8000 : 0x80000000;
-  const span = width === 16 ? 0x10000 : 0x100000000;
-  return bits >= limit ? bits - span : bits;
+// Ширина типа в регистрах: 32-битные типы занимают пару N, N+1
+function typeWidth(address) {
+  const dtype = rowType(address);
+  return dtype ? DTYPE_WIDTH[dtype] : 1;
 }
 
-// Порядок слов из имени формата: "uint32_cdab" → "CDAB"
-function orderOf(fmt) {
-  return fmt.split("_").pop().toUpperCase();
-}
-
-function codeWidth(code) {
-  return code === "hex16" || code === "uint16" || code === "int16" ? 16 : 32;
-}
-
-// Байты значения → слова регистров (зеркало codec.encode)
-function bitsToWords(bits, order) {
-  const raw = [(bits >>> 24) & 0xff, (bits >>> 16) & 0xff, (bits >>> 8) & 0xff, bits & 0xff];
-  const perm = WIRE_PERM[order];
-  const wire = [0, 0, 0, 0];
-  for (let i = 0; i < 4; i += 1) wire[i] = raw[perm[i]];
-  return [(wire[0] << 8) | wire[1], (wire[2] << 8) | wire[3]];
-}
-
-// Слова регистров → биты значения (зеркало codec.decode)
-function wordsToBits(words, order) {
-  const wire = [
-    (words[0] >>> 8) & 0xff, words[0] & 0xff,
-    (words[1] >>> 8) & 0xff, words[1] & 0xff,
-  ];
-  const perm = WIRE_PERM[order];
-  const raw = [0, 0, 0, 0];
-  for (let i = 0; i < 4; i += 1) raw[perm[i]] = wire[i];
-  return (((raw[0] << 24) | (raw[1] << 16) | (raw[2] << 8) | raw[3]) >>> 0);
-}
-
-// Логическое значение (по формату слейва) → слова регистров слота
-function valueToWords(value, fmt) {
-  if (fmt === "uint16") return [value & 0xffff];
-  const bits = fmt.startsWith("float") ? floatToBits(value) : value >>> 0;
-  return bitsToWords(bits, orderOf(fmt));
-}
-
-// Слова регистров слота → логическое значение (по формату слейва)
-function wordsToValue(words, fmt) {
-  if (fmt === "uint16") return words[0] & 0xffff;
-  const bits = wordsToBits(words, orderOf(fmt));
-  return fmt.startsWith("float") ? bitsToFloat(bits) : bits;
-}
-
-// ---------- нативный слот строки и слова её регистров ----------
-
-// Как логическое значение строки ложится на регистры: 32-битные слейвы (2..9)
-// несут слот N..N+1 в одном значении, slave 1 и метрики slave 10 — слово
-// регистра N; IR 300 slave 10 — Unix timestamp (UINT32_ABCD, HRIR_SPEC.md).
-function slotOf(address) {
-  if (fmtKind() !== "uint16") return { width: 32, fmt: spec().fmt };
-  if (state.slave === 10 && state.area === "ir" && address === 300) {
-    return { width: 32, fmt: "uint32_abcd" };
-  }
-  return { width: 16, fmt: "uint16" };
-}
-
-// Слово регистра N (то, что стоит в регистре N), или null
-function wireAt(address) {
-  if (state.values.has(address)) {
-    return valueToWords(state.values.get(address), slotOf(address).fmt)[0];
-  }
-  // строка-продолжение слота: IR 301 slave 10 — младшее слово timestamp
-  const head = address - 1;
-  if (state.values.has(head) && slotOf(head).width === 32) {
-    return valueToWords(state.values.get(head), slotOf(head).fmt)[1];
-  }
-  return null;
-}
-
-// Слова пары регистров (N, N+1) для 32-битного формата, или null
-function pairWords(address) {
-  const slot = slotOf(address);
-  if (slot.width === 32 && state.values.has(address)) {
-    return valueToWords(state.values.get(address), slot.fmt);
-  }
-  const first = wireAt(address);
-  const second = wireAt(address + 1);
-  if (first === null || second === null) return null;
-  return [first, second];
-}
-
-// Пара N, N+1 доступна по геометрии карты (не зависит от загрузки значений)
+// Пара N, N+1 доступна, если адрес N+1 есть в карте (slave 1 и slave 10)
 function pairAvailable(address) {
-  if (slotOf(address).width === 32) return true;
   return state.addresses.includes(address + 1);
 }
 
-// Строка с 32-битным форматом объединяет пару регистров N, N+1 (null — не пара)
+// Строка с 32-битным типом объединяет пару регистров N, N+1 (null — не пара):
+// строка N+1 скрыта, её значением распоряжается поведение адреса N
 function pairOf(address) {
-  if (codeWidth(rowCode(address)) !== 32 || !pairAvailable(address)) return null;
+  if (typeWidth(address) !== 2 || !pairAvailable(address)) return null;
   return { a: address, b: address + 1 };
 }
 
-// Подсказка о паре: слова самих регистров за скомпонованным значением строки
+// Подсказка о паре для тултипа значения
 function pairHint(address) {
   const pair = pairOf(address);
   if (!pair) return "";
-  const first = wireAt(pair.a);
-  const second = wireAt(pair.b);
-  if (first === null || second === null) return "";
-  return window.t("Пара регистров {a} и {b}: {a} = {wa}, {b} = {wb}", {
+  return window.t("Пара регистров {a} и {b}: одно значение типа {type}, строка {b} скрыта", {
     a: pair.a,
     b: pair.b,
-    wa: first,
-    wb: second,
+    type: rowType(address),
   });
 }
 
@@ -244,87 +124,19 @@ function valueTitle(address) {
   return hints.join(" · ");
 }
 
-// ---------- формат строки: выбор пользователя ----------
-
-function loadFormats() {
-  try {
-    return JSON.parse(localStorage.getItem(FORMATS_KEY) || "{}");
-  } catch (error) {
-    return {};
-  }
-}
-
-const rowFormats = loadFormats();
-
-function rowKey(address) {
-  return state.slave + ":" + state.area + ":" + address;
-}
-
-function defaultCode(address) {
-  const fmt = slotOf(address).fmt;
-  if (fmt === "uint16") return "uint16";
-  if (fmt.startsWith("uint32")) return fmt;
-  return "float32_" + fmt.split("_").pop();
-}
-
-function rowCode(address) {
-  const stored = rowFormats[rowKey(address)];
-  return stored && FORMAT_SET.has(stored) ? stored : defaultCode(address);
-}
-
-function setRowCode(address, code) {
-  rowFormats[rowKey(address)] = code;
-  try {
-    localStorage.setItem(FORMATS_KEY, JSON.stringify(rowFormats));
-  } catch (error) {
-    // приватный режим браузера — выбор живёт до перезагрузки
-  }
-}
-
-// ---------- отображение значения в формате строки ----------
-
-// Пара слов → число в 32-битном формате строки
-function numberFromWords(words, code) {
-  if (code === "hex32") return ((words[0] << 16) | words[1]) >>> 0;
-  const bits = wordsToBits(words, orderOf(code));
-  if (code.startsWith("int32")) return toSigned(bits, 32);
-  if (code.startsWith("float32")) return bitsToFloat(bits);
-  return bits;
-}
-
-// Число строки в выбранном формате (для ячейки и тренда), или null
-function rowNumber(address, code) {
-  if (state.area === "cl" || state.area === "di") {
-    return state.values.has(address) ? (state.values.get(address) ? 1 : 0) : null;
-  }
-  if (codeWidth(code) === 16) {
-    const word = wireAt(address);
-    if (word === null) return null;
-    return code === "int16" ? toSigned(word, 16) : word;
-  }
-  const words = pairWords(address);
-  if (words === null) return null;
-  return numberFromWords(words, code);
-}
-
-function formatNumber(number, code) {
-  if (number === null) return "—";
-  if (code === "hex16") {
-    return "0x" + (number & 0xffff).toString(16).toUpperCase().padStart(4, "0");
-  }
-  if (code === "hex32") {
-    const bits = number >>> 0;
-    return (
-      "0x" + ((bits >>> 16) & 0xffff).toString(16).toUpperCase().padStart(4, "0") +
-      " 0x" + (bits & 0xffff).toString(16).toUpperCase().padStart(4, "0")
-    );
-  }
-  return String(number);
-}
+// ---------- отображение значения по типу строки ----------
 
 function formatDisplay(address) {
-  const code = rowCode(address);
-  return formatNumber(rowNumber(address, code), code);
+  if (state.area === "cl" || state.area === "di") {
+    return state.values.has(address) ? (state.values.get(address) ? "1" : "0") : "—";
+  }
+  if (!state.values.has(address)) return "—";
+  const value = Number(state.values.get(address));
+  if (!Number.isFinite(value)) return "—";
+  if (rowType(address) === "float32") {
+    return String(Number(value.toPrecision(7))); // 841.3699951171875 → 841.37
+  }
+  return String(Math.round(value));
 }
 
 // ---------- теги: имена сигналов строк ----------
@@ -358,13 +170,9 @@ function tagText(address) {
 
 // ---------- поведение строки: выбор kind и настройки (TASK-716) ----------
 
-function behaviorAt(address) {
-  return state.behaviors.get(address) || null;
-}
-
-// PUT привязки поведения: kind + params + locked; ответ обновляет кэш строки.
-// Поведения общие (last-write-wins) — настройка действует для всех пользователей.
-async function putBehavior(address, kind, params, locked) {
+// PUT привязки поведения: kind + params + locked + dtype; ответ обновляет кэш
+// строки. Поведения общие (last-write-wins) — настройка действует для всех.
+async function putBehavior(address, kind, params, locked, dtype) {
   showError(window.t("Установка…"));
   try {
     const response = await fetch(
@@ -372,7 +180,7 @@ async function putBehavior(address, kind, params, locked) {
       {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kind: kind, params: params, locked: locked }),
+        body: JSON.stringify({ kind: kind, params: params, locked: locked, dtype: dtype || null }),
       }
     );
     const body = await response.json();
@@ -437,7 +245,7 @@ async function resetBehavior(address) {
 }
 
 // Селект поведения строки: kind из NUMERIC/DISCRETE по области; смена сразу
-// ставит поведение с параметрами по умолчанию (настройки открываются по «⚙»)
+// ставит поведение с параметрами по умолчанию (тип строки сохраняется)
 function buildBehaviorSelect(address) {
   const select = document.createElement("select");
   select.className = "bh-kind";
@@ -461,13 +269,13 @@ function buildBehaviorSelect(address) {
   select.value = item.kind;
   select.addEventListener("change", function () {
     if (!select.value) return;
-    putBehavior(address, select.value, defaultParams(select.value), item.locked);
+    putBehavior(address, select.value, defaultParams(select.value), item.locked, item.dtype);
   });
   return select;
 }
 
-// Строка настроек поведения: параметры kind'а, locked, «Установить»/
-// «Сбросить к дефолту»/«Закрыть» (слотом 0 — form-actions)
+// Строка настроек поведения: тип значения (hr/ir), параметры kind'а, locked,
+// «Установить»/«Сбросить к дефолту»/«Закрыть» (слотом 0 — form-actions)
 function buildBehaviorEditor(address) {
   const row = document.createElement("tr");
   row.className = "bh-edit";
@@ -475,6 +283,26 @@ function buildBehaviorEditor(address) {
   cell.colSpan = 7;
   const item = behaviorAt(address);
   const kind = item ? item.kind : "";
+
+  // Тип значения (TASK-717): 16-битная сетка — все типы, 32-битная — только
+  // 32-битные (слот слейва уже пара регистров)
+  if (state.area === "hr" || state.area === "ir") {
+    const typeBox = document.createElement("label");
+    typeBox.className = "bh-param";
+    typeBox.textContent = window.t("Тип") + " ";
+    const typeSelect = document.createElement("select");
+    typeSelect.id = "reg-bh-dtype-" + address;
+    for (const dtype of dtypesForFmt(spec().fmt)) {
+      const option = document.createElement("option");
+      option.value = dtype;
+      option.textContent = dtype;
+      typeSelect.appendChild(option);
+    }
+    if (item && item.dtype) typeSelect.value = item.dtype;
+    typeBox.appendChild(typeSelect);
+    cell.appendChild(typeBox);
+  }
+
   const paramsBox = document.createElement("div");
   paramsBox.className = "bh-params";
   renderFormParams(paramsBox, kind);
@@ -501,7 +329,8 @@ function buildBehaviorEditor(address) {
       showError(window.t("Ошибка: {text}", { text: message }));
     });
     if (params === null) return;
-    putBehavior(address, kindNow, params, lock.checked);
+    const typeSelect = el("reg-bh-dtype-" + address);
+    putBehavior(address, kindNow, params, lock.checked, typeSelect ? typeSelect.value : null);
   });
 
   const reset = document.createElement("button");
@@ -525,15 +354,15 @@ function buildBehaviorEditor(address) {
   actions.appendChild(apply);
   actions.appendChild(reset);
   actions.appendChild(close);
-  // На slave 1 32-битный формат строки — пара независимых регистров N, N+1:
-  // поведение настраивает только N, а N+1 живёт своей строкой при 16-битном формате
+  // На slave 1 32-битный тип — пара регистров N, N+1: поведение настраивает
+  // только N, а N+1 скрыт (его строка появляется при 16-битном типе)
   const pair = pairOf(address);
-  if (pair && slotOf(address).width === 16) {
+  if (pair) {
     const hint = document.createElement("p");
     hint.className = "note";
     hint.textContent = window.t(
-      "Строка объединяет регистры {a} и {b} выбранным форматом; поведение настраивает регистр {a}, а регистр {b} скрыт - он виден своей строкой при 16-битном формате.",
-      { a: pair.a, b: pair.b }
+      "Тип {type} занимает регистры {a} и {b}; поведение настраивает регистр {a}, регистр {b} скрыт - младший регистр пары.",
+      { type: rowType(address), a: pair.a, b: pair.b }
     );
     cell.appendChild(hint);
   }
@@ -561,58 +390,13 @@ function pushHistory(address, value, now) {
   }
 }
 
-// Откуда берётся слово регистра N: строка-продолжение слота (slave 10, IR 301)
-// живёт в истории адреса-заголовка (300) младшим словом
-function sampleSource(address) {
-  if (
-    slotOf(address).width === 16 &&
-    slotOf(address - 1).width === 32 &&
-    state.addresses.includes(address - 1)
-  ) {
-    return { address: address - 1, word: 1 };
-  }
-  return { address: address, word: 0 };
-}
-
-// Ряд [{t, v}] строки в текущем формате: значения преобразуются так же,
-// как ячейка «Значение»; пара N, N+1 собирается по меткам времени кадра
-function seriesFor(address, code) {
+// Ряд [{t, v}] строки: логические значения истории, как в ячейке «Значение»
+function seriesFor(address) {
   const out = [];
-  const push = function (t, words) {
-    out.push({
-      t: t,
-      v: codeWidth(code) === 16
-        ? (code === "int16" ? toSigned(words[0], 16) : words[0])
-        : numberFromWords(words, code),
-    });
-  };
-  if (state.area === "cl" || state.area === "di") {
-    for (const sample of samplesOf(address)) out.push({ t: sample.t, v: sample.v ? 1 : 0 });
-    return out;
-  }
-  const slot = slotOf(address);
-  if (slot.width === 32) {
-    // слот N, N+1 целиком лежит в одном логическом значении
-    for (const sample of samplesOf(address)) push(sample.t, valueToWords(sample.v, slot.fmt));
-    return out;
-  }
-  const source = sampleSource(address);
-  const first = samplesOf(source.address).map(function (sample) {
-    return {
-      t: sample.t,
-      v: valueToWords(sample.v, slotOf(source.address).fmt)[source.word],
-    };
-  });
-  if (codeWidth(code) === 16) {
-    for (const sample of first) push(sample.t, [sample.v]);
-    return out;
-  }
-  const second = new Map();
-  for (const sample of samplesOf(address + 1)) {
-    second.set(sample.t, valueToWords(sample.v, slotOf(address + 1).fmt)[0]);
-  }
-  for (const sample of first) {
-    if (second.has(sample.t)) push(sample.t, [sample.v, second.get(sample.t)]);
+  const bitArea = state.area === "cl" || state.area === "di";
+  for (const sample of samplesOf(address)) {
+    const value = bitArea ? (sample.v ? 1 : 0) : Number(sample.v);
+    out.push({ t: sample.t, v: value });
   }
   return out;
 }
@@ -621,7 +405,7 @@ function seriesFor(address, code) {
 function drawSpark(canvas, address) {
   const now = Date.now();
   const from = now - HISTORY_S * 1000;
-  const points = seriesFor(address, rowCode(address)).filter(function (point) {
+  const points = seriesFor(address).filter(function (point) {
     return point.t >= from && Number.isFinite(point.v);
   });
   const dpr = window.devicePixelRatio || 1;
@@ -673,138 +457,71 @@ function showError(text) {
   el("reg-status").textContent = text;
 }
 
-// ---------- ввод значения в формате строки ----------
+// ---------- ввод значения по типу строки ----------
 
-function rangeError(code, text) {
-  return window.t("{type} вне диапазона: {text}", { type: FORMAT_LABELS[code], text: text });
-}
-
-// HEX-ввод: 0x… — шестнадцатеричное слово; без префикса — десятичное число
-function parseHex(text, width) {
-  const parts = text.split(/[\s,]+/).filter(function (part) { return part !== ""; });
-  const words = [];
-  for (const part of parts) {
-    let value;
-    if (/^0x[0-9a-f]+$/i.test(part)) value = parseInt(part, 16);
-    else if (/^[0-9]+$/.test(part)) value = Number(part);
-    else return { error: window.t("Не число: {text}", { text: part }) };
-    if (!Number.isFinite(value) || value < 0 || value > 0xffffffff) {
-      return { error: window.t("Не число: {text}", { text: part }) };
-    }
-    words.push(value);
-  }
-  if (width === 16) {
-    if (words.length !== 1 || words[0] > 0xffff) {
-      return { error: window.t("HEX16 — это одно слово 0x0000..0xFFFF") };
-    }
-    return { words: [words[0]] };
-  }
-  if (words.length === 2 && words[0] <= 0xffff && words[1] <= 0xffff) {
-    return { words: [words[0], words[1]] };
-  }
-  if (words.length === 1 && words[0] <= 0xffffffff) {
-    return { words: [(words[0] >>> 16) & 0xffff, words[0] & 0xffff] };
-  }
-  return { error: window.t("HEX32 — это два слова: 0x1234 0x5678 или 0x12345678") };
-}
-
-// Ввод значения в формате строки → слова регистров (16 бит — слово, 32 — пара)
-function parseWords(raw, code) {
+// Ввод строки → логическое значение типа: 0x… — шестнадцатеричное (только
+// целые типы), float32 принимает дробные; диапазон сверяется по типу
+function parseValue(raw, dtype) {
   const text = raw.trim();
-  if (code === "hex16") return parseHex(text, 16);
-  if (code === "hex32") return parseHex(text, 32);
   const value = Number(text);
   if (text === "" || !Number.isFinite(value)) {
     return { error: window.t("Не число: {text}", { text: text }) };
   }
-  if (code.startsWith("float32")) {
-    if (!Number.isFinite(bitsToFloat(floatToBits(value)))) {
-      return { error: window.t("Значение вне диапазона float32: {text}", { text: text }) };
-    }
-    return { words: bitsToWords(floatToBits(value), orderOf(code)) };
-  }
+  if (dtype === "float32") return { value: value };
   if (!Number.isInteger(value)) {
     return { error: window.t("Нужно целое число: {text}", { text: text }) };
   }
-  if (code === "uint16") {
-    if (value < 0 || value > 0xffff) return { error: rangeError(code, text) };
-    return { words: [value] };
+  const ranges = {
+    uint16: [0, 0xffff],
+    int16: [-0x8000, 0x7fff],
+    uint32: [0, 0xffffffff],
+    int32: [-0x80000000, 0x7fffffff],
+  };
+  const range = ranges[dtype];
+  if (range && (value < range[0] || value > range[1])) {
+    return { error: window.t("{type} вне диапазона: {text}", { type: dtype, text: text }) };
   }
-  if (code === "int16") {
-    if (value < -0x8000 || value > 0x7fff) return { error: rangeError(code, text) };
-    return { words: [value & 0xffff] };
-  }
-  if (code.startsWith("int32")) {
-    if (value < -0x80000000 || value > 0x7fffffff) return { error: rangeError(code, text) };
-    return { words: bitsToWords(value >>> 0, orderOf(code)) };
-  }
-  if (value < 0 || value > 0xffffffff) return { error: rangeError(code, text) };
-  return { words: bitsToWords(value >>> 0, orderOf(code)) };
+  return { value: value };
 }
 
 async function saveValue(address, raw) {
-  // Ввод трактуется в формате строки; на сервер уходит логическое значение
-  // формата слейва. Для пары N, N+1 — две записи (по слову на регистр).
-  let updates;
+  // Ввод трактуется по типу строки; на сервер уходит логическое значение
+  let value;
   if (state.area === "cl") {
     const trimmed = raw.trim();
-    updates = [[address, trimmed === "1" || trimmed.toLowerCase() === "true"]];
+    value = trimmed === "1" || trimmed.toLowerCase() === "true";
   } else {
-    const code = rowCode(address);
-    const parsed = parseWords(raw, code);
+    const parsed = parseValue(raw, rowType(address));
     if (parsed.error) {
       showError(parsed.error);
       renderTable();
       return;
     }
-    const slot = slotOf(address);
-    if (slot.width === 32) {
-      const current = pairWords(address);
-      if (current === null) {
-        showError(window.t("Нет текущего значения слова — запись отменена"));
-        renderTable();
-        return;
-      }
-      // 16-битный формат меняет слово регистра N, 32-битный — оба слова
-      const words = codeWidth(code) === 16 ? [parsed.words[0], current[1]] : parsed.words;
-      const value = wordsToValue(words, slot.fmt);
-      if (slot.fmt.startsWith("float") && !Number.isFinite(value)) {
-        showError(window.t("Значение даёт NaN/Inf в формате слейва — запись отменена"));
-        renderTable();
-        return;
-      }
-      updates = [[address, value]];
-    } else if (codeWidth(code) === 16) {
-      updates = [[address, parsed.words[0]]];
-    } else {
-      updates = [[address, parsed.words[0]], [address + 1, parsed.words[1]]];
-    }
+    value = parsed.value;
   }
   try {
-    for (const [target, value] of updates) {
-      const response = await fetch("/api/modbus/write", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          slave: state.slave,
-          area: state.area,
-          address: target,
-          value: value,
-        }),
-      });
-      const body = await response.json();
-      if (!response.ok) {
-        showError(
-          window.t("Запись отклонена ({status}): {detail}", {
-            status: response.status,
-            detail: body.detail || response.statusText,
-          })
-        );
-        renderTable();
-        return;
-      }
-      state.values.set(target, body.value);
+    const response = await fetch("/api/modbus/write", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        slave: state.slave,
+        area: state.area,
+        address: address,
+        value: value,
+      }),
+    });
+    const body = await response.json();
+    if (!response.ok) {
+      showError(
+        window.t("Запись отклонена ({status}): {detail}", {
+          status: response.status,
+          detail: body.detail || response.statusText,
+        })
+      );
+      renderTable();
+      return;
     }
+    state.values.set(address, body.value);
     showError("");
   } catch (error) {
     showError(window.t("Ошибка записи: {error}", { error: error }));
@@ -888,7 +605,7 @@ function visibleRows() {
       continue;
     }
     out.push(address);
-    covered = codeWidth(rowCode(address)) === 32 && pairAvailable(address);
+    covered = typeWidth(address) === 2 && pairAvailable(address);
   }
   return out;
 }
@@ -962,30 +679,6 @@ function renderAreas() {
   select.value = state.area;
 }
 
-// Селект формата строки: 32-битные форматы недоступны без пары N, N+1
-function buildFormatSelect(address) {
-  const select = document.createElement("select");
-  const spanOk = pairAvailable(address);
-  for (const [label, items] of FORMAT_GROUPS) {
-    const group = document.createElement("optgroup");
-    group.label = label;
-    for (const [code, text] of items) {
-      const option = document.createElement("option");
-      option.value = code;
-      option.textContent = text;
-      if (codeWidth(code) === 32 && !spanOk) option.disabled = true;
-      group.appendChild(option);
-    }
-    select.appendChild(group);
-  }
-  select.value = rowCode(address);
-  select.addEventListener("change", function () {
-    setRowCode(address, select.value);
-    renderTable();
-  });
-  return select;
-}
-
 function renderTable() {
   const body = el("reg-body");
   body.innerHTML = "";
@@ -1026,15 +719,12 @@ function renderTable() {
       cellBehavior.appendChild(wrap);
     }
 
-    const cellFormat = document.createElement("td");
-    if (state.area === "cl" || state.area === "di") {
-      const bits = document.createElement("span");
-      bits.className = "reg-bits";
-      bits.textContent = "0/1";
-      cellFormat.appendChild(bits);
-    } else {
-      cellFormat.appendChild(buildFormatSelect(address));
-    }
+    // Тип значения строки (TASK-717): только отображение, выбирается в «⚙»
+    const cellType = document.createElement("td");
+    const typeSpan = document.createElement("span");
+    typeSpan.className = "reg-bits";
+    typeSpan.textContent = typeLabel(address);
+    cellType.appendChild(typeSpan);
 
     const cellValue = document.createElement("td");
     cellValue.id = "reg-cell-" + address;
@@ -1074,7 +764,7 @@ function renderTable() {
     row.appendChild(cellAddress);
     row.appendChild(cellTag);
     row.appendChild(cellBehavior);
-    row.appendChild(cellFormat);
+    row.appendChild(cellType);
     row.appendChild(cellValue);
     row.appendChild(cellTrend);
     row.appendChild(cellStar);
@@ -1124,14 +814,13 @@ function applyFrame(frame) {
     state.values.set(number, value);
     if (tracked.has(number)) pushHistory(number, value, now);
   }
-  // Строка без собственного ключа значения (301 — младшее слово слота 300)
-  // и пара N, N+1 зависят от соседних регистров: перерисовываем всё окно,
-  // редактируемые ячейки не трогаем
+  // Пара N, N+1 и строки slave 10 зависят от соседних регистров: перерисовываем
+  // всё окно, редактируемые ячейки не трогаем
   for (const address of visibleRows()) {
     const cell = el("reg-cell-" + address);
     if (cell && !cell.classList.contains("editing")) {
       cell.textContent = formatDisplay(address);
-      cell.title = valueTitle(address); // слова пары меняются с каждым кадром
+      cell.title = valueTitle(address); // подсказки пары меняются с кадрами
     }
   }
 }
@@ -1148,8 +837,8 @@ async function loadRest() {
   }
 }
 
-// Конфиг поведений для тегов: по слейву и области, целиком (дефолты включены).
-// У slave 10 поведений нет — его теги считает slave10Tag.
+// Конфиг поведений тегов и типов: по слейву и области, целиком (дефолты
+// включены). У slave 10 поведений нет — его теги считает slave10Tag.
 async function loadBehaviors() {
   const slave = state.slave;
   const area = state.area;
@@ -1167,7 +856,7 @@ async function loadBehaviors() {
     }
     renderTable();
   } catch (error) {
-    // API недоступен — теги остаются пустыми
+    // API недоступен — теги и типы остаются пустыми
   }
 }
 
@@ -1220,7 +909,7 @@ function refresh() {
   state.behaviors.clear();
   state.bhEdit = null; // форма настроек закрывается при смене контекста
   renderTable();
-  loadBehaviors(); // теги строк догоняют после ответа API
+  loadBehaviors(); // теги и типы строк догоняют после ответа API
   subscribe();
   loadRest();
 }

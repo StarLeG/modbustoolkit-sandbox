@@ -11,8 +11,8 @@ import math
 import random
 from typing import Any, Literal, Protocol, cast
 
-from app.modbus.behavior import Behavior, Binding, check_binding
-from app.modbus.types import Area
+from app.modbus.behavior import Behavior, Binding, check_binding, effective_dtype
+from app.modbus.types import Area, ValueDType
 
 
 class GeneratorContext(Protocol):
@@ -214,7 +214,8 @@ class SineGenerator:
 class RandomUniformGenerator:
     """`random_uniform`: равномерное случайное значение в [min, max] на каждом update.
 
-    Если min и max — целые — `rng.randint` (включительно), иначе `rng.uniform`.
+    Математика по типу значения (TASK-717): для целых типов — `rng.randint`
+    (включительно), для float32 — `rng.uniform` (дробные значения).
     """
 
     is_static = False
@@ -225,6 +226,8 @@ class RandomUniformGenerator:
         binding: Binding,
         ctx: GeneratorContext,
         rng: random.Random,
+        *,
+        dtype: ValueDType | None = None,
     ) -> None:
         _ = binding, ctx
         self._rng = rng
@@ -232,11 +235,14 @@ class RandomUniformGenerator:
         self._max = _num(params, "max", 100)
         if self._max < self._min:
             raise ValueError(f"random_uniform: max {self._max!r} < min {self._min!r}")
+        self._integers = dtype != "float32" and isinstance(self._min, int) and isinstance(
+            self._max, int
+        )
 
     def update(self, now: float) -> int | float:
         _ = now
-        if isinstance(self._min, int) and isinstance(self._max, int):
-            return self._rng.randint(self._min, self._max)
+        if self._integers:
+            return self._rng.randint(int(self._min), int(self._max))
         return self._rng.uniform(self._min, self._max)
 
 
@@ -595,7 +601,8 @@ def create_generator(
     if behavior.kind == "sine":
         return SineGenerator(params, binding, ctx, rng)
     if behavior.kind == "random_uniform":
-        return RandomUniformGenerator(params, binding, ctx, rng)
+        dtype = effective_dtype(behavior, binding[0]) if area in ("hr", "ir") else None
+        return RandomUniformGenerator(params, binding, ctx, rng, dtype=dtype)
     if behavior.kind == "random_walk":
         return RandomWalkGenerator(params, binding, ctx, rng)
     if behavior.kind == "ramp_oneshot":

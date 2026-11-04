@@ -44,11 +44,14 @@ def test_slave_specs_cover_ten_units() -> None:
 
 
 def test_register_formats_match_hrir_spec() -> None:
-    assert len(RegisterFormat) == 9
+    """9 форматов HRIR_SPEC + знаковые INT16/INT32_ABCD..DCBA (TASK-717) — всего 14."""
+    assert len(RegisterFormat) == 14
     assert RegisterFormat.UINT16.registers_per_value == 1
+    assert RegisterFormat.INT16.registers_per_value == 1
     assert RegisterFormat.UINT32_CDAB.registers_per_value == 2
     assert RegisterFormat.FLOAT_DCBA.is_float
     assert not RegisterFormat.UINT32_ABCD.is_float
+    assert not RegisterFormat.INT32_ABCD.is_float
 
 
 def test_address_range_contains_respects_step() -> None:

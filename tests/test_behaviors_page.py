@@ -59,6 +59,24 @@ def test_behaviors_page_has_overrides_table() -> None:
         assert fragment in html, fragment
 
 
+def test_behaviors_page_has_type_select() -> None:
+    """Селект «Тип» формы и колонка «Тип» в переопределениях (TASK-717)."""
+    with _client() as client:
+        response = client.get("/behaviors")
+    html = response.text
+    assert 'id="bh-dtype"' in html
+    assert "<th>Тип</th>" in html  # таблица переопределений
+    with _client() as client:
+        js = client.get("/static/behaviors.js").text
+    for fragment in (
+        "renderDtypes",
+        "selectedDtype",
+        "dtypesForFmt",
+        "dtype: selectedDtype()",
+    ):
+        assert fragment in js, fragment
+
+
 def test_behaviors_page_serves_js_module() -> None:
     with _client() as client:
         response = client.get("/behaviors")

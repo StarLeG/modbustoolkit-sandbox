@@ -1,4 +1,7 @@
-"""TASK-202: тик-цикл движка поведений (применение, change-detection, start/stop)."""
+"""TASK-202: тик-цикл движка поведений (применение, change-detection, start/stop).
+
+TASK-717: математика по типу значения (dtype) и запись пар регистров N, N+1.
+"""
 from __future__ import annotations
 
 import asyncio
@@ -8,7 +11,7 @@ import time
 import pytest
 
 from app.modbus.behavior import Behavior, BehaviorRegistry
-from app.modbus.codec import encode
+from app.modbus.codec import decode, encode
 from app.modbus.engine import BehaviorEngine
 from app.modbus.journal import Journal
 from app.modbus.slave_map import SlaveMap
@@ -262,3 +265,70 @@ def test_generator_creation_failure_falls_back(monkeypatch: pytest.MonkeyPatch) 
     assert fallback.kind == "constant"
     assert fallback.params == {"value": 0}
     assert fallback.locked is True
+
+
+# --- математика по типу значения и пары регистров (TASK-717) ----------------------------
+
+
+def test_constant_float32_writes_pair_with_fraction() -> None:
+    """float32: дробное значение уходит в пару регистров N, N+1 без округления."""
+    engine, registry, maps = _make_engine()
+    registry.set(1, "hr", 5, Behavior("constant", {"value": 841.37}, dtype="float32"))
+    engine.tick(now=0.0)
+    regs = maps[1].get_registers("hr", 5, 2)
+    assert decode(regs, RegisterFormat.FLOAT_ABCD) == pytest.approx(841.37)
+
+
+def test_sawtooth_math_follows_dtype() -> None:
+    """Одна математика, разный clamp: uint16 дробь теряет, float32 — сохраняет."""
+    engine, registry, maps = _make_engine()
+    registry.set(1, "hr", 1, Behavior("sawtooth", {"min": 0, "max": 1, "period_s": 1}))
+    registry.set(1, "hr", 3, Behavior("sawtooth", {"min": 0, "max": 1, "period_s": 1}, dtype="float32"))
+    engine.tick(now=0.0)
+    engine.tick(now=0.5)  # середина периода: значение 0.5
+    assert maps[1].get_registers("hr", 1, 1) == [0]  # uint16: 0.5 → 0
+    regs = maps[1].get_registers("hr", 3, 2)
+    assert decode(regs, RegisterFormat.FLOAT_ABCD) == pytest.approx(0.5)
+
+
+def test_int16_writes_signed_value() -> None:
+    """int16: отрицательное значение кодируется двухкомплементарно (TASK-717)."""
+    engine, registry, maps = _make_engine()
+    registry.set(1, "hr", 5, Behavior("constant", {"value": -5}, dtype="int16"))
+    engine.tick(now=0.0)
+    assert maps[1].get_registers("hr", 5, 1) == encode(-5, RegisterFormat.INT16)
+
+
+def test_pair_lower_register_not_applied_separately() -> None:
+    """Младший регистр пары N, N+1 принадлежит привязке N: дефолт N+1 не пишется."""
+    engine, registry, maps = _make_engine()
+    registry.set(1, "hr", 5, Behavior("constant", {"value": 65537.0}, dtype="float32"))
+    engine.tick(now=0.0)
+    regs = encode(65537.0, RegisterFormat.FLOAT_ABCD)
+    assert regs[1] != 0  # младшее слово ненулевое — иначе тест ничего не доказывает
+    assert maps[1].get_registers("hr", 5, 2) == regs
+    assert maps[1].get_registers("hr", 6, 1) == [regs[1]]  # дефолт constant 0 не применился
+
+
+def test_read_value_resolves_pair_owner() -> None:
+    """Чтение младшего регистра пары отдаёт значение головы (для follow)."""
+    engine, registry, _maps = _make_engine()
+    registry.set(1, "hr", 5, Behavior("constant", {"value": 841.37}, dtype="float32"))
+    engine.tick(now=0.0)
+    assert engine.read_value((1, "hr", 6)) == pytest.approx(841.37)
+    assert engine.read_value((1, "hr", 5)) == pytest.approx(841.37)
+
+
+def test_fallback_keeps_dtype() -> None:
+    """Сбой поведения → constant 0, но тип значения привязки сохраняется (TASK-717)."""
+    engine, registry, maps = _make_engine()
+    registry.set(1, "hr", 5, Behavior("constant", {"value": 5}, locked=True, dtype="float32"))
+    engine.tick(now=0.0)
+    engine._slots[(1, "hr", 5)].generator = _BoomGenerator()
+    engine.tick(now=1.0)
+    fallback = registry.get(1, "hr", 5)
+    assert fallback is not None
+    assert fallback.kind == "constant"
+    assert fallback.dtype == "float32"
+    assert fallback.locked is True
+    assert decode(maps[1].get_registers("hr", 5, 2), RegisterFormat.FLOAT_ABCD) == 0.0

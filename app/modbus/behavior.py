@@ -3,6 +3,7 @@
 TASK-201: модель `Behavior` (kind / params / locked) и реестр переопределений.
 TASK-205/810: дефолтные поведения slave 1..9 (материализация в реестр, ADR-009).
 TASK-241: нормализация value-параметров по формату регистра (`normalize_params`).
+TASK-717: тип значения `Behavior.dtype` управляет геометрией пар N, N+1.
 Семантика движка — `docs/adr/ADR-003-behavior-engine.md`:
 
 - привязка — value-grid адрес (`SlaveSpec.area_ranges`): для слейвов 2..9
@@ -12,14 +13,25 @@ TASK-241: нормализация value-параметров по формат�
 """
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol, get_args
 
 from app.modbus.codec import clamp_value
 from app.modbus.journal import Journal, JournalEntry
 from app.modbus.slave_map import EXC_DEVICE_FAILURE, ModbusMapError
-from app.modbus.types import AREAS, SLAVE_SPECS, Area, RegisterFormat
+from app.modbus.types import (
+    AREAS,
+    DTYPE_WIDTH,
+    SLAVE_SPECS,
+    VALUE_DTYPES,
+    Area,
+    RegisterFormat,
+    ValueDType,
+    allowed_dtypes,
+    native_dtype,
+    wire_format,
+)
 
 BehaviorKind = Literal[
     "constant",
@@ -76,12 +88,15 @@ class Behavior:
     """Конфигурация поведения одного регистра/бита.
 
     `params` — параметры kind'а (см. `generators.py`); `locked=True` запрещает
-    внешние записи в привязку (0x04 + журнал, ADR-003 п. 3).
+    внешние записи в привязку (0x04 + журнал, ADR-003 п. 3). `dtype` — тип
+    значения (TASK-717): None — нативный тип слейва; ширина типа управляет
+    геометрией (32-битный тип на slave 1 занимает пару регистров N, N+1).
     """
 
     kind: BehaviorKind
     params: dict[str, Any] = field(default_factory=dict)
     locked: bool = False
+    dtype: ValueDType | None = None
 
     def __post_init__(self) -> None:
         if self.kind not in BEHAVIOR_KINDS:
@@ -90,6 +105,43 @@ class Behavior:
             raise TypeError(f"params должен быть dict, получено: {type(self.params).__name__}")
         if not isinstance(self.locked, bool):
             raise TypeError(f"locked должен быть bool, получено: {type(self.locked).__name__}")
+        if self.dtype is not None and self.dtype not in VALUE_DTYPES:
+            raise ValueError(f"неизвестный тип значения: {self.dtype!r}")
+
+
+def effective_dtype(behavior: Behavior, slave: int) -> ValueDType:
+    """Тип значения привязки: явный `dtype` либо нативный тип слейва (TASK-717)."""
+    return behavior.dtype if behavior.dtype is not None else native_dtype(SLAVE_SPECS[slave].fmt)
+
+
+def wire_format_for(behavior: Behavior, slave: int) -> RegisterFormat:
+    """Формат на проводе привязки: тип значения × порядок слов слейва (TASK-717)."""
+    return wire_format(effective_dtype(behavior, slave), SLAVE_SPECS[slave].fmt)
+
+
+def binding_width(behavior: Behavior, slave: int, area: Area) -> int:
+    """Ширина привязки в регистрах: 2 для 32-битного типа, 1 иначе (TASK-717)."""
+    if area in ("cl", "di"):
+        return 1
+    return DTYPE_WIDTH[effective_dtype(behavior, slave)]
+
+
+def check_dtype_for_area(dtype: ValueDType | None, slave: int, area: Area) -> None:
+    """Тип значения задаётся только для hr/ir; на 32-битной сетке — 32-битный тип.
+
+    cl/di — биты 0/1, тип значения не применим. 16-битная сетка (slave 1)
+    принимает все типы; 32-битная (слейвы 2..9) — только uint32/int32/float32.
+    """
+    if area in ("cl", "di"):
+        if dtype is not None:
+            raise ValueError(f"для {area} тип значения не задаётся (это биты 0/1)")
+        return
+    if dtype is None:
+        return
+    spec_fmt = SLAVE_SPECS[slave].fmt
+    if dtype not in allowed_dtypes(spec_fmt):
+        allowed = ", ".join(allowed_dtypes(spec_fmt))
+        raise ValueError(f"slave {slave}: тип {dtype} не подходит — допустимы {allowed}")
 
 
 def check_binding(slave: int, area: Area, address: int) -> None:
@@ -169,7 +221,7 @@ def normalize_params(behavior: Behavior, fmt: RegisterFormat) -> Behavior:
         normalized[name] = raw
     if not changed:
         return behavior
-    return Behavior(behavior.kind, normalized, locked=behavior.locked)
+    return Behavior(behavior.kind, normalized, locked=behavior.locked, dtype=behavior.dtype)
 
 
 # --- дефолтные поведения (TASK-205/810, ADR-003 п. 5, ADR-009) --------------------------
@@ -322,18 +374,28 @@ class BehaviorRegistry:
         """
         return self._behaviors.get((slave, area, address))
 
-    def set(self, slave: int, area: Area, address: int, behavior: Behavior) -> None:
-        """Установить поведение; привязка и kind/область валидируются.
+    def set(
+        self,
+        slave: int,
+        area: Area,
+        address: int,
+        behavior: Behavior,
+        planned: Mapping[Binding, Behavior | None] | None = None,
+    ) -> None:
+        """Установить поведение; привязка, kind/область и геометрия валидируются.
 
-        Value-параметры приводятся к формату регистра слейва (TASK-241);
-        для cl/di (биты) нормализация не нужна.
+        Value-параметры приводятся к типу значения привязки (TASK-241/717);
+        для cl/di (биты) нормализация не нужна. `planned` — изменения того же
+        пакета для атомарной проверки геометрии пар (batch).
         """
         if not isinstance(behavior, Behavior):
             raise TypeError(f"ожидается Behavior, получено: {type(behavior).__name__}")
         check_binding(slave, area, address)
         check_kind_for_area(behavior.kind, area)
+        check_dtype_for_area(behavior.dtype, slave, area)
+        check_geometry(self, slave, area, address, behavior, planned)
         if area in ("hr", "ir"):
-            behavior = normalize_params(behavior, SLAVE_SPECS[slave].fmt)
+            behavior = normalize_params(behavior, wire_format_for(behavior, slave))
         self._behaviors[(slave, area, address)] = behavior
 
     def remove(self, slave: int, area: Area, address: int) -> Behavior | None:
@@ -398,17 +460,113 @@ class WritePolicy(Protocol):
     ) -> None: ...
 
 
-def touched_bindings(device_id: int, area: Area, address: int, count: int) -> list[Binding]:
+def pair_owner(registry: BehaviorRegistry, slave: int, area: Area, address: int) -> int | None:
+    """Адрес пары N, N+1, которой принадлежит регистр `address` (TASK-717).
+
+    None — регистр самостоятелен. 32-битный тип привязки N покрывает регистры
+    N и N+1: адрес N+1 скрыт и настраивается только через адрес N. На 32-битной
+    сетке (слейвы 2..9) пересечений нет.
+    """
+    if area in ("cl", "di"):
+        return None
+    if SLAVE_SPECS[slave].fmt.registers_per_value != 1:
+        return None
+    previous = registry.get(slave, area, address - 1)
+    if previous is not None and binding_width(previous, slave, area) == 2:
+        return address - 1
+    return None
+
+
+def check_geometry(
+    registry: BehaviorRegistry,
+    slave: int,
+    area: Area,
+    address: int,
+    behavior: Behavior | None,
+    planned: Mapping[Binding, Behavior | None] | None = None,
+) -> None:
+    """Геометрия пар N, N+1 (TASK-717): тип ширины 2 занимает два регистра.
+
+    - адрес, покрытый парой (младший регистр N+1), не настраивается — его
+      строка скрыта, настройка идёт по адресу N;
+    - 32-битный тип требует свободный младший регистр: если N+1 переопределён,
+      сначала сбросьте его к дефолту;
+    - пара не должна выходить за карту регистров слейва.
+
+    `planned` — изменения того же пакета: (slave, area, address) → Behavior
+    либо None (сброс к дефолту); атомарная проверка пакета учитывает элементы
+    друг друга. `behavior=None` (сброс) допустим везде.
+    """
+    if behavior is None:
+        return
+    planned = planned or {}
+
+    def width_at(target: Binding) -> int:
+        if target in planned:
+            override = planned[target]
+            if override is None:
+                return binding_width(default_behavior(*target), target[0], target[1])
+            return binding_width(override, target[0], target[1])
+        existing = registry.get(*target)
+        return binding_width(existing, target[0], target[1]) if existing is not None else 1
+
+    def is_override_at(target: Binding) -> bool:
+        if target in planned:
+            return planned[target] is not None
+        existing = registry.get(*target)
+        return existing is not None and existing is not default_behavior(*target)
+
+    previous = (slave, area, address - 1)
+    if width_at(previous) == 2:
+        raise ValueError(
+            f"slave {slave}: {area} {address} — младший регистр пары "
+            f"{address - 1}, {address}; настройка идёт по адресу {address - 1}"
+        )
+    if binding_width(behavior, slave, area) != 2:
+        return
+    spec = SLAVE_SPECS[slave]
+    if not any((address + 1) in rng for rng in spec.register_ranges(area)):
+        raise ValueError(
+            f"slave {slave}: {area} {address}: 32-битный тип требует пару регистров "
+            f"{address}, {address + 1}, но {address + 1} вне карты регистров"
+        )
+    neighbor = (slave, area, address + 1)
+    if is_override_at(neighbor):
+        raise ValueError(
+            f"slave {slave}: {area} {address + 1} настроен и будет скрыт парой "
+            f"{address}, {address + 1} — сначала сбросьте его к дефолту"
+        )
+
+
+def touched_bindings(
+    registry: BehaviorRegistry | None,
+    device_id: int,
+    area: Area,
+    address: int,
+    count: int,
+) -> list[Binding]:
     """Привязки (value-grid), которые задевает окно сырых регистров/бит записи.
 
     Для 32-битных форматов (слейвы 2..9) запись в регистр N+1 задевает
-    значение по адресу N — окно переводится в value-grid до проверки locked.
+    значение по адресу N; на slave 1 запись в младший регистр пары N, N+1
+    задевает значение пары (нужен `registry`; без него каждое слово — своя
+    привязка). Окно переводится в value-grid до проверки locked.
     """
     spec = SLAVE_SPECS.get(device_id)
     if spec is None:
         return []
-    if area in ("cl", "di") or spec.fmt.registers_per_value == 1:
+    if area in ("cl", "di"):
         return [(device_id, area, a) for a in range(address, address + count)]
+    if spec.fmt.registers_per_value == 1:
+        bindings: list[Binding] = []
+        for raw in range(address, address + count):
+            owner = (
+                pair_owner(registry, device_id, area, raw) if registry is not None else None
+            )
+            binding = (device_id, area, owner if owner is not None else raw)
+            if binding not in bindings:
+                bindings.append(binding)
+        return bindings
     first = address if address % 2 == 1 else address - 1
     last_raw = address + count - 1
     last = last_raw if last_raw % 2 == 1 else last_raw - 1
@@ -432,7 +590,7 @@ def make_write_policy(registry: BehaviorRegistry, journal: Journal | None = None
         source: str = "modbus",
         ip: str | None = None,
     ) -> None:
-        for binding in touched_bindings(device_id, area, address, len(values)):
+        for binding in touched_bindings(registry, device_id, area, address, len(values)):
             if registry.is_locked(*binding):
                 if journal is not None:
                     journal.add(

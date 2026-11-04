@@ -7,23 +7,29 @@ from pydantic import BaseModel, Field
 
 from app.api.configgen import ConfigTool
 from app.modbus.injection import InjectionKind
-from app.modbus.types import Area, RegisterFormat
+from app.modbus.types import Area, RegisterFormat, ValueDType
 
 
 class BehaviorIn(BaseModel):
     """Входное поведение для установки (TASK-302).
 
     `kind` проверяется моделью `Behavior` (400 на неизвестный), value-параметры
-    приводятся к формату регистра при установке (TASK-241).
+    приводятся к типу значения при установке (TASK-241). `dtype` — тип значения
+    (TASK-717): None — нативный тип слейва; задаётся только для hr/ir.
     """
 
     kind: str
     params: dict[str, Any] = {}
     locked: bool = False
+    dtype: ValueDType | None = None
 
 
 class BehaviorOut(BaseModel):
-    """Поведение привязки в REST-представлении."""
+    """Поведение привязки в REST-представлении.
+
+    `dtype` (TASK-717) — эффективный тип значения привязки (явный или
+    нативный тип слейва); None для cl/di (биты).
+    """
 
     slave: int
     area: Area
@@ -32,6 +38,7 @@ class BehaviorOut(BaseModel):
     params: dict[str, Any]
     locked: bool
     is_default: bool
+    dtype: ValueDType | None = None
 
 
 class BehaviorsResponse(BaseModel):
@@ -50,7 +57,8 @@ class BatchItem(BaseModel):
     """Элемент пакетной операции (TASK-303).
 
     `remove=True` — сброс привязки к дефолту (kind в этом случае запрещён),
-    иначе — установка поведения (kind обязателен).
+    иначе — установка поведения (kind обязателен). `dtype` — тип значения
+    (TASK-717), как в `BehaviorIn`.
     """
 
     slave: int
@@ -60,6 +68,7 @@ class BatchItem(BaseModel):
     params: dict[str, Any] = {}
     locked: bool = False
     remove: bool = False
+    dtype: ValueDType | None = None
 
 
 #: Потолок элементов пакета (TASK-1004, ADR-012): UI шлёт диапазон целиком
@@ -204,7 +213,8 @@ class RestoreResponse(BaseModel):
 
     `restored` — записано значений hr/cl; `skipped_locked` — пропущено из-за
     locked-поведений (ADR-003 п. 3); `ignored` — значения ir/di из снимка
-    (генерируются движком, не восстанавливаются).
+    (генерируются движком, не восстанавливаются) и младшие регистры пар
+    N, N+1 (TASK-717: значением управляет привязка N).
     """
 
     restored: int

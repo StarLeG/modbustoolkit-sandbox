@@ -3,6 +3,11 @@
 Источник истины — docs/HRIR_SPEC.md. Адреса 1-based, как в спецификации Modbus.
 Для 32-битных форматов адрес значения — адрес его старшего регистра (N читается
 из регистров N и N+1), поэтому диапазон значений идёт с шагом 2.
+
+Тип значения (TASK-717) задаётся поведением (`Behavior.dtype`) и управляет
+геометрией: 16-битный тип занимает регистр N, 32-битный — пару N, N+1.
+Порядок слов ABCD/CDAB/BADC/DCBA всегда берётся из формата слейва; для пар
+slave 1 (формат слейва 16-битный) — ABCD, старшее слово в регистре N.
 """
 from __future__ import annotations
 
@@ -14,27 +19,62 @@ Area = Literal["cl", "di", "hr", "ir"]
 
 AREAS: tuple[Area, ...] = ("cl", "di", "hr", "ir")
 
+#: Тип значения поведения (числовые области hr/ir, TASK-717).
+ValueDType = Literal["uint16", "int16", "uint32", "int32", "float32"]
+
+VALUE_DTYPES: tuple[ValueDType, ...] = ("uint16", "int16", "uint32", "int32", "float32")
+
+#: Ширина типа в регистрах: 16-битные — один регистр, 32-битные — пара N, N+1.
+DTYPE_WIDTH: dict[ValueDType, int] = {
+    "uint16": 1,
+    "int16": 1,
+    "uint32": 2,
+    "int32": 2,
+    "float32": 2,
+}
+
 
 class RegisterFormat(Enum):
     """Формат значения регистра: тип данных + порядок байтов/слов (A — старший байт)."""
 
     UINT16 = "uint16"
+    INT16 = "int16"
     UINT32_ABCD = "uint32_abcd"
     UINT32_CDAB = "uint32_cdab"
     UINT32_BADC = "uint32_badc"
     UINT32_DCBA = "uint32_dcba"
+    INT32_ABCD = "int32_abcd"
+    INT32_CDAB = "int32_cdab"
+    INT32_BADC = "int32_badc"
+    INT32_DCBA = "int32_dcba"
     FLOAT_ABCD = "float_abcd"
     FLOAT_CDAB = "float_cdab"
     FLOAT_BADC = "float_badc"
     FLOAT_DCBA = "float_dcba"
 
     @property
+    def dtype(self) -> ValueDType:
+        """Тип значения формата без учёта порядка слов (float_abcd → float32)."""
+        prefix, _, _ = self.value.partition("_")
+        return ("float32" if prefix == "float" else prefix)  # type: ignore[return-value]
+
+    @property
+    def word_order(self) -> str | None:
+        """Порядок слов формата ("abcd"/"cdab"/"badc"/"dcba"); 16-битные — None."""
+        _, _, order = self.value.partition("_")
+        return order or None
+
+    @property
     def is_float(self) -> bool:
-        return self.value.startswith("float")
+        return self.dtype == "float32"
+
+    @property
+    def is_signed(self) -> bool:
+        return self.dtype in ("int16", "int32")
 
     @property
     def is_32bit(self) -> bool:
-        return self is not RegisterFormat.UINT16
+        return DTYPE_WIDTH[self.dtype] == 2
 
     @property
     def bytes_per_value(self) -> int:
@@ -43,6 +83,50 @@ class RegisterFormat(Enum):
     @property
     def registers_per_value(self) -> int:
         return 2 if self.is_32bit else 1
+
+
+def native_dtype(fmt: RegisterFormat) -> ValueDType:
+    """Нативный тип значений слейва с форматом `fmt` (uint16/uint32/float32)."""
+    return fmt.dtype
+
+
+def allowed_dtypes(fmt: RegisterFormat) -> tuple[ValueDType, ...]:
+    """Типы значений, допустимые в поведениях слейва (TASK-717).
+
+    16-битная сетка (slave 1) принимает все типы: 32-битный тип занимает
+    пару регистров N, N+1. 32-битная сетка (слейвы 2..9) — только 32-битные
+    типы: слот уже занимает пару.
+    """
+    if fmt.registers_per_value == 1:
+        return VALUE_DTYPES
+    return tuple(dtype for dtype in VALUE_DTYPES if DTYPE_WIDTH[dtype] == 2)
+
+
+_WIRE_BY_DTYPE_ORDER: dict[tuple[ValueDType, str], RegisterFormat] = {
+    ("uint32", "abcd"): RegisterFormat.UINT32_ABCD,
+    ("uint32", "cdab"): RegisterFormat.UINT32_CDAB,
+    ("uint32", "badc"): RegisterFormat.UINT32_BADC,
+    ("uint32", "dcba"): RegisterFormat.UINT32_DCBA,
+    ("int32", "abcd"): RegisterFormat.INT32_ABCD,
+    ("int32", "cdab"): RegisterFormat.INT32_CDAB,
+    ("int32", "badc"): RegisterFormat.INT32_BADC,
+    ("int32", "dcba"): RegisterFormat.INT32_DCBA,
+    ("float32", "abcd"): RegisterFormat.FLOAT_ABCD,
+    ("float32", "cdab"): RegisterFormat.FLOAT_CDAB,
+    ("float32", "badc"): RegisterFormat.FLOAT_BADC,
+    ("float32", "dcba"): RegisterFormat.FLOAT_DCBA,
+}
+
+
+def wire_format(dtype: ValueDType, slave_fmt: RegisterFormat) -> RegisterFormat:
+    """Формат на проводе: тип значения × порядок слов слейва (TASK-717).
+
+    16-битные типы порядка слов не имеют. Для 32-битного типа на slave 1
+    (формат слейва 16-битный) порядок слов ABCD: старшее слово в регистре N.
+    """
+    if DTYPE_WIDTH[dtype] == 1:
+        return RegisterFormat.UINT16 if dtype == "uint16" else RegisterFormat.INT16
+    return _WIRE_BY_DTYPE_ORDER[(dtype, slave_fmt.word_order or "abcd")]
 
 
 @dataclass(frozen=True)
