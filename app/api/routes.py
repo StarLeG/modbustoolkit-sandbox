@@ -39,6 +39,10 @@ from app.api.models import (
     SnapshotDiffResponse,
     SnapshotDiffRow,
     StateResponse,
+    TagDeleteResponse,
+    TagIn,
+    TagOut,
+    TagsResponse,
     WriteIn,
     WriteResponse,
 )
@@ -63,6 +67,7 @@ from app.modbus.injection import Injection
 from app.modbus.journal import JournalEntry
 from app.modbus.ping import probe_slave
 from app.modbus.slave_map import ModbusMapError
+from app.modbus.tags import validate_tag
 from app.modbus.types import AREAS, SLAVE_SPECS, Area, RegisterFormat
 
 router = APIRouter(prefix="/api/modbus")
@@ -363,6 +368,122 @@ def post_behaviors_reset(
 
 
 @router.get(
+    "/tags",
+    response_model=TagsResponse,
+    tags=["Теги"],
+    summary="Пользовательские теги",
+    description=(
+        "Все теги, заданные пользователями поверх автоматических имён "
+        "сигналов. Теги общие для всех подключений (shared last-write-wins) "
+        "и сбрасываются при перезапуске сервера."
+    ),
+)
+def get_tags(services: ServicesDep) -> TagsResponse:
+    """Пользовательские теги всех привязок (TASK-718)."""
+    items: list[TagOut] = []
+    for slave_key, areas in services.tags.snapshot().items():
+        for area, addresses in areas.items():
+            for address, tag in addresses.items():
+                items.append(
+                    TagOut(slave=int(slave_key), area=area, address=int(address), tag=tag)
+                )
+    items.sort(key=lambda item: (item.slave, item.area, item.address))
+    return TagsResponse(items=items, total=len(items))
+
+
+@router.put(
+    "/tags/{slave}/{area}/{address}",
+    response_model=TagOut,
+    tags=["Теги"],
+    summary="Задать тег",
+    description=(
+        "Задаёт имя сигнала (тег) одной ячейке карты регистров. Тег общий "
+        "для всех пользователей, живёт до перезапуска сервера. Пустой или "
+        "длинный текст — 400; действие из интерфейса ограничено лимитом на IP."
+    ),
+)
+def put_tag(
+    request: Request,
+    body: TagIn,
+    slave: Annotated[int, Path(ge=1, le=10)],
+    area: Area,
+    address: Annotated[int, Path(ge=1)],
+    services: ServicesDep,
+) -> TagOut:
+    """Задать пользовательский тег привязки (TASK-718).
+
+    Возвращает сохранённый тег после `strip`; ошибка привязки/текста → 400.
+    Действие из UI лимитируется `WEB_MAX_WRITE_PER_MIN_PER_IP` (429).
+    Запись в журнал — `tag_set` с `source="web"`.
+    """
+    ip = _ui_action_ip(request, services)
+    try:
+        tag = validate_tag(slave, area, address, body.tag)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    services.tags.set(slave, area, address, tag)
+    services.journal.add(
+        JournalEntry(
+            action="tag_set",
+            slave=slave,
+            area=area,
+            address=address,
+            value=tag,
+            source="web",
+            ip=ip,
+        )
+    )
+    return TagOut(slave=slave, area=area, address=address, tag=tag)
+
+
+@router.delete(
+    "/tags/{slave}/{area}/{address}",
+    response_model=TagDeleteResponse,
+    tags=["Теги"],
+    summary="Сбросить тег",
+    description=(
+        "Удаляет пользовательский тег: строка снова показывает автоматическое "
+        "имя сигнала. Если тега не было — `cleared=false`, ошибки нет. "
+        "Действие из интерфейса ограничено лимитом на IP."
+    ),
+)
+def delete_tag(
+    request: Request,
+    slave: Annotated[int, Path(ge=1, le=10)],
+    area: Area,
+    address: Annotated[int, Path(ge=1)],
+    services: ServicesDep,
+) -> TagDeleteResponse:
+    """Сбросить тег к автоматическому имени (TASK-718).
+
+    Идемпотентно: отсутствие тега — `cleared=false` без ошибки. Действие из
+    UI лимитируется `WEB_MAX_WRITE_PER_MIN_PER_IP` (429). Запись в журнал —
+    `tag_cleared` (только если тег был).
+    """
+    ip = _ui_action_ip(request, services)
+    spec = SLAVE_SPECS[slave]
+    if not spec.has_address(area, address):
+        raise HTTPException(
+            status_code=400,
+            detail=f"slave {slave}: адрес {address} вне карты регистров ({area})",
+        )
+    cleared = services.tags.clear(slave, area, address)
+    if cleared:
+        services.journal.add(
+            JournalEntry(
+                action="tag_cleared",
+                slave=slave,
+                area=area,
+                address=address,
+                value=None,
+                source="web",
+                ip=ip,
+            )
+        )
+    return TagDeleteResponse(slave=slave, area=area, address=address, cleared=cleared)
+
+
+@router.get(
     "/state",
     response_model=StateResponse,
     tags=["Значения"],
@@ -395,6 +516,7 @@ def get_state(
         slave=slave,
         fmt=smap.spec.fmt,
         areas={a: area_values(smap, a, services.registry) for a in areas_to_read},
+        tags=services.tags.for_slave(slave),
     )
 
 

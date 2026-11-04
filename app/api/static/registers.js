@@ -11,6 +11,11 @@
 // (float32 — 7 значащих цифр).
 // Колонка «Тег» — имя сигнала: поведение регистра (slave 1..9, конфиг из
 // REST /api/modbus/behaviors) либо метрика времени (slave 10, HRIR_SPEC).
+// Тег можно переименовать (TASK-718): клик по ячейке открывает ввод, Enter
+// сохраняет (PUT /api/modbus/tags/...), пустая строка сбрасывает к
+// автоматическому имени (DELETE). Пользовательские теги общие для всех
+// (shared last-write-wins), живут до перезапуска сервера, приходят в кадре
+// WS/REST полем «tags».
 // Колонка «Поведение» (TASK-716) — выбор kind строкой и «⚙» с параметрами:
 // смена kind сразу ставит поведение (PUT /api/modbus/behaviors/...), «⚙»
 // открывает строку настроек (тип, params, locked, «Сбросить к дефолту» — batch
@@ -43,6 +48,7 @@ const state = {
   values: new Map(),
   history: new Map(), // адрес → [{t, v}] значения за HISTORY_S
   behaviors: new Map(), // адрес → поведение из REST (имя для тега строки)
+  tags: new Map(), // адрес → пользовательский тег из кадра (TASK-718)
   bhEdit: null, // адрес строки с открытой формой настроек поведения
   start: 0, // индекс первого отображаемого адреса
   ws: null,
@@ -157,8 +163,9 @@ function slave10Tag(address) {
   return "UTC" + sign + (hours < 10 ? "0" : "") + hours + " · " + window.t(metric);
 }
 
-// Тег строки: поведение регистра (slave 1..9) либо метрика времени (slave 10)
-function tagText(address) {
+// Автоматический тег строки: поведение регистра (slave 1..9) либо метрика
+// времени (slave 10). Пользовательский тег (TASK-718) его заменяет.
+function autoTag(address) {
   if (state.slave === 10) return slave10Tag(address);
   const item = state.behaviors.get(address);
   if (!item) return "";
@@ -166,6 +173,12 @@ function tagText(address) {
     return window.t("копия {source}", { source: item.params.source });
   }
   return kindLabel(item.kind);
+}
+
+// Тег строки: пользовательское имя (кэш из кадра) либо автоматическое
+function tagText(address) {
+  const custom = state.tags.get(address);
+  return custom !== undefined ? custom : autoTag(address);
 }
 
 // ---------- поведение строки: выбор kind и настройки (TASK-716) ----------
@@ -576,6 +589,89 @@ function startEdit(address) {
   field.focus();
 }
 
+// ---------- теги строк (TASK-718) ----------
+
+// Клик по тегу → ввод имени; Enter сохраняет, пустая строка сбрасывает к
+// автоматическому имени (DELETE), Esc/blur отменяют. Тег общий для всех
+// пользователей (shared last-write-wins).
+function startTagEdit(address) {
+  const cell = el("reg-tag-" + address);
+  if (!cell) return;
+  cell.classList.add("editing"); // WS-кадры не перерисовывают ячейку правки
+  cell.textContent = "";
+  const field = document.createElement("input");
+  field.value = state.tags.has(address) ? state.tags.get(address) : "";
+  field.maxLength = 64;
+  field.placeholder = autoTag(address);
+  field.title = window.t("Enter - сохранить, пусто - сброс к имени сигнала, Esc - отмена");
+  field.addEventListener("click", function (event) {
+    event.stopPropagation(); // клик по полю не всплывает до ячейки
+  });
+  field.addEventListener("keydown", function (event) {
+    if (event.key === "Enter") saveTag(address, field.value);
+    if (event.key === "Escape") renderTable();
+  });
+  field.addEventListener("blur", function () {
+    renderTable(); // отмена
+  });
+  cell.appendChild(field);
+  field.focus();
+  field.select();
+}
+
+async function saveTag(address, raw) {
+  const text = raw.trim();
+  if (text === "") {
+    await clearTag(address);
+    return;
+  }
+  try {
+    const response = await fetch(
+      "/api/modbus/tags/" + state.slave + "/" + state.area + "/" + address,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tag: text }),
+      }
+    );
+    const body = await response.json();
+    if (!response.ok) {
+      showError(
+        window.t("Тег отклонён ({status}): {detail}", {
+          status: response.status,
+          detail: body.detail || response.statusText,
+        })
+      );
+      renderTable();
+      return;
+    }
+    state.tags.set(address, body.tag);
+    showError("");
+  } catch (error) {
+    showError(window.t("Ошибка сохранения тега: {error}", { error: error }));
+  }
+  renderTable();
+}
+
+async function clearTag(address) {
+  try {
+    const response = await fetch(
+      "/api/modbus/tags/" + state.slave + "/" + state.area + "/" + address,
+      { method: "DELETE" }
+    );
+    if (!response.ok) {
+      showError(window.t("Сброс тега отклонён ({status})", { status: response.status }));
+      renderTable();
+      return;
+    }
+    state.tags.delete(address); // строка вернётся к автоматическому имени
+    showError("");
+  } catch (error) {
+    showError(window.t("Ошибка сохранения тега: {error}", { error: error }));
+  }
+  renderTable();
+}
+
 // ---------- пагинация ----------
 
 function addressesOf(area) {
@@ -689,9 +785,18 @@ function renderTable() {
     cellAddress.textContent = String(address);
 
     const cellTag = document.createElement("td");
-    cellTag.className = "tag";
+    cellTag.className = "tag editable";
+    cellTag.id = "reg-tag-" + address;
     cellTag.textContent = tagText(address);
-    cellTag.title = cellTag.textContent;
+    // Подсказка: автоматическое имя + действие по клику (TASK-718)
+    const auto = autoTag(address);
+    cellTag.title =
+      (state.tags.has(address) && auto ? auto + " · " : "") +
+      window.t("Нажмите, чтобы изменить тег");
+    cellTag.addEventListener("click", function () {
+      if (cellTag.classList.contains("editing")) return; // клик по вводу не перезапускает правку
+      startTagEdit(address);
+    });
 
     // Поведение строки: kind + «⚙» настроек; slave 10 — без поведений
     const cellBehavior = document.createElement("td");
@@ -814,6 +919,14 @@ function applyFrame(frame) {
     state.values.set(number, value);
     if (tracked.has(number)) pushHistory(number, value, now);
   }
+  // Пользовательские теги слейва (TASK-718): кадр несёт их целиком
+  if (frame.tags) {
+    state.tags = new Map(
+      Object.entries(frame.tags).map(function (pair) {
+        return [Number(pair[0]), pair[1]];
+      })
+    );
+  }
   // Пара N, N+1 и строки slave 10 зависят от соседних регистров: перерисовываем
   // всё окно, редактируемые ячейки не трогаем
   for (const address of visibleRows()) {
@@ -821,6 +934,10 @@ function applyFrame(frame) {
     if (cell && !cell.classList.contains("editing")) {
       cell.textContent = formatDisplay(address);
       cell.title = valueTitle(address); // подсказки пары меняются с кадрами
+    }
+    const tagCell = el("reg-tag-" + address);
+    if (tagCell && !tagCell.classList.contains("editing")) {
+      tagCell.textContent = tagText(address);
     }
   }
 }
@@ -907,6 +1024,7 @@ function refresh() {
   state.values.clear();
   state.history.clear(); // другой slave/область — своя история
   state.behaviors.clear();
+  state.tags.clear(); // теги привязаны к слейву — кэш обновит кадр (TASK-718)
   state.bhEdit = null; // форма настроек закрывается при смене контекста
   renderTable();
   loadBehaviors(); // теги и типы строк догоняют после ответа API

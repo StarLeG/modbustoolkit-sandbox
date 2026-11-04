@@ -116,6 +116,8 @@ class StateResponse(BaseModel):
     slave: int
     fmt: RegisterFormat
     areas: dict[Area, dict[str, int | float | bool]]
+    #: Пользовательские теги слейва `{адрес: тег}` (TASK-718); без тегов — пусто.
+    tags: dict[str, str] = {}
 
 
 class WriteIn(BaseModel):
@@ -396,3 +398,38 @@ class ConfigGenResponse(BaseModel):
     tool: ConfigTool
     filename: str
     content: str
+
+
+class TagIn(BaseModel):
+    """Пользовательский тег привязки (TASK-718).
+
+    Пустой тег после `strip` — ошибка 400; чтобы вернуть автоматическое имя,
+    используйте `DELETE /api/modbus/tags/{slave}/{area}/{address}`.
+    """
+
+    tag: str = Field(min_length=1, max_length=256)
+
+
+class TagOut(BaseModel):
+    """Заданный пользователем тег привязки (TASK-718)."""
+
+    slave: int
+    area: Area
+    address: int
+    tag: str
+
+
+class TagsResponse(BaseModel):
+    """Все пользовательские теги (TASK-718): только явно заданные переопределения."""
+
+    items: list[TagOut]
+    total: int
+
+
+class TagDeleteResponse(BaseModel):
+    """Результат сброса тега: `cleared=False` — тега и не было (TASK-718)."""
+
+    slave: int
+    area: Area
+    address: int
+    cleared: bool

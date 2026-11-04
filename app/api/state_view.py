@@ -12,6 +12,7 @@ from app.modbus.behavior import BehaviorRegistry, pair_owner, wire_format_for
 from app.modbus.codec import decode
 from app.modbus.slave10 import TIMESTAMP_ADDR
 from app.modbus.slave_map import SlaveMap
+from app.modbus.tags import TagStore
 from app.modbus.types import Area, RegisterFormat
 
 
@@ -63,10 +64,12 @@ def state_payload(
     areas: tuple[Area, ...],
     addresses: tuple[int, ...] | None = None,
     registry: BehaviorRegistry | None = None,
+    tags: TagStore | None = None,
 ) -> dict[str, Any]:
-    """Кадр состояния `{"slave", "fmt", "areas"}` (GET /state и /ws/state, ADR-005 п. 2).
+    """Кадр состояния `{"slave", "fmt", "areas", "tags"}` (GET /state и /ws/state, ADR-005 п. 2).
 
-    `addresses` — фильтр сетки значений; `None` — вся сетка.
+    `addresses` — фильтр сетки значений; `None` — вся сетка. `tags` — только
+    пользовательские теги слейва (TASK-718); без тегов поле пустое.
     """
     smap = maps[slave]
     wanted = set(addresses) if addresses is not None else None
@@ -76,4 +79,5 @@ def state_payload(
         if wanted is not None:
             values = {k: v for k, v in values.items() if int(k) in wanted}
         out[area] = values
-    return {"slave": slave, "fmt": smap.spec.fmt.value, "areas": out}
+    user_tags = tags.for_slave(slave) if tags is not None else {}
+    return {"slave": slave, "fmt": smap.spec.fmt.value, "areas": out, "tags": user_tags}

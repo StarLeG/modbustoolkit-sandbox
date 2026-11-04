@@ -148,7 +148,12 @@
     "Уже в избранном: {key}": "Already in favorites: {key}",
     "Добавлено: {key}": "Added: {key}",
     "Убрано: {key}": "Removed: {key}",
-    "Список очищен": "List cleared"
+    "Список очищен": "List cleared",
+    "Нажмите, чтобы изменить тег": "Click to edit the tag",
+    "Enter - сохранить, пусто - сброс к имени сигнала, Esc - отмена": "Enter - save, empty - reset to the signal name, Esc - cancel",
+    "Тег отклонён ({status}): {detail}": "Tag rejected ({status}): {detail}",
+    "Ошибка сохранения тега: {error}": "Failed to save the tag: {error}",
+    "Сброс тега отклонён ({status})": "Tag reset rejected ({status})"
   };
   window.t = function (s, vars) {
     var out = (window.LANG === "en" && EN[s] !== undefined) ? EN[s] : s;

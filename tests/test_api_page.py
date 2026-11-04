@@ -225,6 +225,34 @@ def test_registers_js_tags() -> None:
         assert fragment in js, fragment
 
 
+def test_registers_js_tags_editable() -> None:
+    """Тег редактируется кликом: PUT/DELETE /api/modbus/tags (TASK-718)."""
+    with _client() as client:
+        js = client.get("/static/registers.js").text
+    for fragment in (
+        "autoTag",
+        "startTagEdit",
+        "saveTag",
+        "clearTag",
+        '"/api/modbus/tags/" + state.slave + "/" + state.area + "/" + address',
+        '"PUT"',
+        '"DELETE"',
+        "state.tags",
+    ):
+        assert fragment in js, fragment
+    with _client() as client:
+        i18n = client.get("/static/i18n.js").text
+    assert "Нажмите, чтобы изменить тег" in i18n
+    assert "Click to edit the tag" in i18n
+
+
+def test_registers_page_notes_tag_editing() -> None:
+    """Подпись под таблицей объясняет переименование тега (TASK-718)."""
+    with _client() as client:
+        response = client.get("/registers")
+    assert "Тег можно переименовать кликом" in response.text
+
+
 def test_registers_page_has_behavior_column() -> None:
     """Колонка «Поведение» — выбор kind и настройки в карте регистров (TASK-716)."""
     with _client() as client:
