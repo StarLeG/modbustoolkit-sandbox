@@ -181,10 +181,53 @@ def test_registers_js_tags() -> None:
     for fragment in (
         "tagText",
         "slave10Tag",
-        "KIND_RU",
+        "kindLabel",  # имена kind — из общей схемы behavior-form.js
         "/api/modbus/behaviors",
         "Unix timestamp",
         "Смещение UTC",
+    ):
+        assert fragment in js, fragment
+
+
+def test_registers_page_has_behavior_column() -> None:
+    """Колонка «Поведение» — выбор kind и настройки в карте регистров (TASK-716)."""
+    with _client() as client:
+        response = client.get("/registers")
+    html = response.text
+    assert "<th>Поведение</th>" in html  # шапка таблицы, после тега
+    assert "общие для всех пользователей" in html  # поведения общие (подпись)
+
+
+def test_behavior_form_js_served() -> None:
+    """Общая схема поведений (kind/params) — модуль /static/behavior-form.js (TASK-716)."""
+    with _client() as client:
+        response = client.get("/static/behavior-form.js")
+    assert response.status_code == 200
+    js = response.text
+    for fragment in (
+        "PARAM_SPECS",
+        "NUMERIC_KINDS",
+        "DISCRETE_KINDS",
+        "renderParams",
+        "collectParams",
+        "defaultParams",
+    ):
+        assert fragment in js, fragment
+
+
+def test_registers_js_behavior_select_and_settings() -> None:
+    """Селект поведения строки ставит kind, «⚙» открывает параметры (TASK-716)."""
+    with _client() as client:
+        response = client.get("/static/registers.js")
+    js = response.text
+    for fragment in (
+        'from "./behavior-form.js"',
+        "buildBehaviorSelect",
+        "buildBehaviorEditor",
+        '"/api/modbus/behaviors/" + state.slave + "/" + state.area + "/" + address',
+        "/api/modbus/behaviors/batch",
+        "remove: true",
+        "Настроить поведение",
     ):
         assert fragment in js, fragment
 

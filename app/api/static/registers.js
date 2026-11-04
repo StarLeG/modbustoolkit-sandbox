@@ -12,8 +12,21 @@
 // Выбранный формат хранится в localStorage и переживает перезагрузку.
 // Колонка «Тег» — имя сигнала: поведение регистра (slave 1..9, конфиг из
 // REST /api/modbus/behaviors) либо метрика времени (slave 10, HRIR_SPEC).
+// Колонка «Поведение» (TASK-716) — выбор kind строкой и «⚙» с параметрами:
+// смена kind сразу ставит поведение (PUT /api/modbus/behaviors/...), «⚙»
+// открывает строку настроек (params + locked, «Сбросить к дефолту» — batch
+// с remove:true). Поведения общие для всех пользователей; slave 10 — без них.
 // Колонка «Тренд, 60 с» — спарклайн строки в её формате: кольцевой буфер
 // сырых значений за 60 с, перерисовка раз в 500 мс.
+
+import {
+  collectParams as collectFormParams,
+  defaultParams,
+  fillParams,
+  kindLabel,
+  kindsForArea,
+  renderParams as renderFormParams,
+} from "./behavior-form.js";
 
 const PAGE_SIZE = 10;
 const RECONNECT_MAX_MS = 15000;
@@ -65,6 +78,7 @@ const state = {
   values: new Map(),
   history: new Map(), // адрес → [{t, v}] сырые значения за HISTORY_S
   behaviors: new Map(), // адрес → поведение из REST (имя для тега строки)
+  bhEdit: null, // адрес строки с открытой формой настроек поведения
   start: 0, // индекс первого отображаемого адреса
   ws: null,
   reconnectAttempt: 0,
@@ -283,27 +297,6 @@ function formatDisplay(address) {
 
 // ---------- теги: имена сигналов строк ----------
 
-// Имена поведений — те же строки, что на странице настройки поведений (i18n.js)
-const KIND_RU = {
-  constant: "константа",
-  counter: "счётчик",
-  sawtooth: "пила",
-  triangle: "треугольник",
-  meander: "меандр",
-  sine: "синус",
-  random_uniform: "равномерный шум",
-  random_walk: "блуждание",
-  ramp_oneshot: "переход (ramp)",
-  countdown: "обратный отсчёт",
-  step: "ступеньки",
-  follow: "копия регистра",
-  toggle: "переключение",
-  pwm: "ШИМ (скважность)",
-  random_bit: "случайный бит",
-  counter_bits: "биты счётчика секунд",
-  follow_bit: "копия бита",
-};
-
 // Метрики блока зоны slave 10 (docs/HRIR_SPEC.md): смещения 1..10 внутри зоны
 const S10_METRICS = [
   "Год", "Месяц", "День", "Час", "Минута", "Секунда",
@@ -328,7 +321,182 @@ function tagText(address) {
   if (item.kind === "follow" && item.params && item.params.source) {
     return window.t("копия {source}", { source: item.params.source });
   }
-  return window.t(KIND_RU[item.kind] || item.kind);
+  return kindLabel(item.kind);
+}
+
+// ---------- поведение строки: выбор kind и настройки (TASK-716) ----------
+
+function behaviorAt(address) {
+  return state.behaviors.get(address) || null;
+}
+
+// PUT привязки поведения: kind + params + locked; ответ обновляет кэш строки.
+// Поведения общие (last-write-wins) — настройка действует для всех пользователей.
+async function putBehavior(address, kind, params, locked) {
+  showError(window.t("Установка…"));
+  try {
+    const response = await fetch(
+      "/api/modbus/behaviors/" + state.slave + "/" + state.area + "/" + address,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: kind, params: params, locked: locked }),
+      }
+    );
+    const body = await response.json();
+    if (!response.ok) {
+      showError(
+        window.t("Запись отклонена ({status}): {detail}", {
+          status: response.status,
+          detail: body.detail || response.statusText,
+        })
+      );
+      renderTable(); // селект возвращается к установленному поведению
+      return;
+    }
+    state.behaviors.set(address, body);
+    showError(
+      window.t("Установлено: slave {slave} {area} {address}, поведение {kind}.", {
+        slave: body.slave,
+        area: body.area,
+        address: body.address,
+        kind: kindLabel(body.kind),
+      })
+    );
+    renderTable();
+  } catch (error) {
+    showError(window.t("Ошибка: {text}", { text: error }));
+    renderTable();
+  }
+}
+
+// Сброс привязки к дефолту (batch с remove:true), конфиг перечитывается из API
+async function resetBehavior(address) {
+  showError(window.t("Сброс к дефолту…"));
+  try {
+    const response = await fetch("/api/modbus/behaviors/batch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        items: [{ slave: state.slave, area: state.area, address: address, remove: true }],
+      }),
+    });
+    const body = await response.json();
+    if (!response.ok) {
+      showError(
+        window.t("Запись отклонена ({status}): {detail}", {
+          status: response.status,
+          detail: body.detail || response.statusText,
+        })
+      );
+      return;
+    }
+    showError(
+      window.t("Сброшено к дефолту: slave {slave} {area} {address}.", {
+        slave: state.slave,
+        area: state.area,
+        address: address,
+      })
+    );
+    await loadBehaviors(); // дефолты приходят с сервера
+  } catch (error) {
+    showError(window.t("Ошибка: {text}", { text: error }));
+  }
+}
+
+// Селект поведения строки: kind из NUMERIC/DISCRETE по области; смена сразу
+// ставит поведение с параметрами по умолчанию (настройки открываются по «⚙»)
+function buildBehaviorSelect(address) {
+  const select = document.createElement("select");
+  select.className = "bh-kind";
+  select.id = "reg-bh-select-" + address;
+  const item = behaviorAt(address);
+  for (const kind of kindsForArea(state.area)) {
+    const option = document.createElement("option");
+    option.value = kind;
+    option.textContent = kindLabel(kind);
+    select.appendChild(option);
+  }
+  if (!item) {
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "…";
+    select.insertBefore(placeholder, select.firstChild);
+    select.value = "";
+    select.disabled = true; // конфиг ещё не загружен
+    return select;
+  }
+  select.value = item.kind;
+  select.addEventListener("change", function () {
+    if (!select.value) return;
+    putBehavior(address, select.value, defaultParams(select.value), item.locked);
+  });
+  return select;
+}
+
+// Строка настроек поведения: параметры kind'а, locked, «Установить»/
+// «Сбросить к дефолту»/«Закрыть» (слотом 0 — form-actions)
+function buildBehaviorEditor(address) {
+  const row = document.createElement("tr");
+  row.className = "bh-edit";
+  const cell = document.createElement("td");
+  cell.colSpan = 7;
+  const item = behaviorAt(address);
+  const kind = item ? item.kind : "";
+  const paramsBox = document.createElement("div");
+  paramsBox.className = "bh-params";
+  renderFormParams(paramsBox, kind);
+  if (item) fillParams(paramsBox, item.params);
+
+  const lockLabel = document.createElement("label");
+  lockLabel.className = "check";
+  const lock = document.createElement("input");
+  lock.type = "checkbox";
+  lock.checked = Boolean(item && item.locked);
+  lockLabel.appendChild(lock);
+  lockLabel.appendChild(
+    document.createTextNode(" " + window.t("Заблокировать (locked: внешние записи игнорируются)"))
+  );
+
+  const apply = document.createElement("button");
+  apply.type = "button";
+  apply.textContent = window.t("Установить");
+  apply.addEventListener("click", function () {
+    const current = behaviorAt(address);
+    const selected = el("reg-bh-select-" + address);
+    const kindNow = selected ? selected.value : (current ? current.kind : "");
+    const params = collectFormParams(paramsBox, kindNow, function (message) {
+      showError(window.t("Ошибка: {text}", { text: message }));
+    });
+    if (params === null) return;
+    putBehavior(address, kindNow, params, lock.checked);
+  });
+
+  const reset = document.createElement("button");
+  reset.type = "button";
+  reset.textContent = window.t("Сбросить к дефолту");
+  reset.addEventListener("click", function () {
+    resetBehavior(address);
+  });
+
+  const close = document.createElement("button");
+  close.type = "button";
+  close.textContent = window.t("Закрыть");
+  close.addEventListener("click", function () {
+    state.bhEdit = null;
+    renderTable();
+  });
+
+  const actions = document.createElement("p");
+  actions.className = "form-actions";
+  actions.appendChild(lockLabel);
+  actions.appendChild(apply);
+  actions.appendChild(reset);
+  actions.appendChild(close);
+  cell.appendChild(paramsBox);
+  cell.appendChild(actions);
+  row.appendChild(cell);
+  return row;
 }
 
 // ---------- тренд: история строки за 60 с ----------
@@ -698,6 +866,7 @@ function gotoStart(index) {
   if (total === 0) return;
   showError("");
   state.start = Math.max(0, Math.min(index, total - 1));
+  state.bhEdit = null; // другая страница — форма настроек закрывается
   renderTable();
   subscribe();
   loadRest();
@@ -787,6 +956,32 @@ function renderTable() {
     cellTag.textContent = tagText(address);
     cellTag.title = cellTag.textContent;
 
+    // Поведение строки: kind + «⚙» настроек; slave 10 — без поведений
+    const cellBehavior = document.createElement("td");
+    cellBehavior.className = "bh-cell";
+    if (state.slave === 10) {
+      const none = document.createElement("span");
+      none.className = "reg-bits";
+      none.textContent = "—";
+      none.title = window.t("Slave 10: поведений нет - его IR вычисляются");
+      cellBehavior.appendChild(none);
+    } else {
+      const wrap = document.createElement("div");
+      wrap.className = "bh-cell-row";
+      wrap.appendChild(buildBehaviorSelect(address));
+      const gear = document.createElement("button");
+      gear.type = "button";
+      gear.textContent = "⚙";
+      gear.title = window.t("Настроить поведение");
+      gear.disabled = !behaviorAt(address); // конфиг ещё не загружен
+      gear.addEventListener("click", function () {
+        state.bhEdit = state.bhEdit === address ? null : address;
+        renderTable();
+      });
+      wrap.appendChild(gear);
+      cellBehavior.appendChild(wrap);
+    }
+
     const cellFormat = document.createElement("td");
     if (state.area === "cl" || state.area === "di") {
       const bits = document.createElement("span");
@@ -834,11 +1029,15 @@ function renderTable() {
 
     row.appendChild(cellAddress);
     row.appendChild(cellTag);
+    row.appendChild(cellBehavior);
     row.appendChild(cellFormat);
     row.appendChild(cellValue);
     row.appendChild(cellTrend);
     row.appendChild(cellStar);
     body.appendChild(row);
+    if (state.bhEdit === address && state.slave !== 10) {
+      body.appendChild(buildBehaviorEditor(address));
+    }
   }
   drawTrends();
   updateNav();
@@ -974,6 +1173,7 @@ function refresh() {
   state.values.clear();
   state.history.clear(); // другой slave/область — своя история
   state.behaviors.clear();
+  state.bhEdit = null; // форма настроек закрывается при смене контекста
   renderTable();
   loadBehaviors(); // теги строк догоняют после ответа API
   subscribe();

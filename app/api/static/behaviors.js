@@ -5,134 +5,15 @@
 // /api/modbus/behaviors/{slave}/{area}/{address}; диапазон адресов
 // («Применить к диапазону» / «Сбросить») — POST /api/modbus/behaviors/batch;
 // список переопределений — GET /api/modbus/behaviors?only_overrides=true.
+// Схема kind/params — общая с картой регистров (behavior-form.js, TASK-716).
 
-const NUMERIC_KINDS = [
-  "constant",
-  "counter",
-  "sawtooth",
-  "triangle",
-  "meander",
-  "sine",
-  "random_uniform",
-  "random_walk",
-  "ramp_oneshot",
-  "countdown",
-  "step",
-  "follow",
-];
-
-const DISCRETE_KINDS = ["constant", "toggle", "pwm", "random_bit", "counter_bits", "follow_bit"];
-
-const KIND_LABELS = {
-  constant: window.t("константа"),
-  counter: window.t("счётчик"),
-  sawtooth: window.t("пила"),
-  triangle: window.t("треугольник"),
-  meander: window.t("меандр"),
-  sine: window.t("синус"),
-  random_uniform: window.t("равномерный шум"),
-  random_walk: window.t("блуждание"),
-  ramp_oneshot: window.t("переход (ramp)"),
-  countdown: window.t("обратный отсчёт"),
-  step: window.t("ступеньки"),
-  follow: window.t("копия регистра"),
-  toggle: window.t("переключение"),
-  pwm: window.t("ШИМ (скважность)"),
-  random_bit: window.t("случайный бит"),
-  counter_bits: window.t("биты счётчика секунд"),
-  follow_bit: window.t("копия бита"),
-};
-
-// Поля параметров kind'ов: name — имя параметра API, type — number/bool/text,
-// def — значение по умолчанию (как в generators.py), optional — пустое поле
-// не отправляется (сервер берёт дефолт; нужно для counter_bits: bit = address−1).
-const PARAM_SPECS = {
-  constant: [{ name: "value", label: window.t("Значение"), type: "number", def: 0 }],
-  counter: [
-    { name: "start", label: window.t("Старт"), type: "number", def: 0 },
-    { name: "step", label: window.t("Шаг"), type: "number", def: 1 },
-    { name: "min", label: window.t("Минимум"), type: "number", def: 0 },
-    { name: "max", label: window.t("Максимум"), type: "number", def: 4294967295 },
-    { name: "wrap", label: window.t("Цикл (wrap)"), type: "bool", def: true },
-    { name: "interval_s", label: window.t("Период шага, с"), type: "number", def: 1 },
-  ],
-  sawtooth: [
-    { name: "min", label: window.t("Минимум"), type: "number", def: 0 },
-    { name: "max", label: window.t("Максимум"), type: "number", def: 100 },
-    { name: "period_s", label: window.t("Период, с"), type: "number", def: 10 },
-    { name: "phase", label: window.t("Фаза (доля периода)"), type: "number", def: 0 },
-  ],
-  triangle: [
-    { name: "min", label: window.t("Минимум"), type: "number", def: 0 },
-    { name: "max", label: window.t("Максимум"), type: "number", def: 100 },
-    { name: "period_s", label: window.t("Период, с"), type: "number", def: 10 },
-    { name: "phase", label: window.t("Фаза (доля периода)"), type: "number", def: 0 },
-  ],
-  meander: [
-    { name: "min", label: window.t("Минимум"), type: "number", def: 0 },
-    { name: "max", label: window.t("Максимум"), type: "number", def: 100 },
-    { name: "period_s", label: window.t("Период, с"), type: "number", def: 10 },
-    { name: "duty", label: window.t("Скважность (от 0 до 1)"), type: "number", def: 0.5 },
-    { name: "phase", label: window.t("Фаза (доля периода)"), type: "number", def: 0 },
-  ],
-  sine: [
-    { name: "min", label: window.t("Минимум"), type: "number", def: 0 },
-    { name: "max", label: window.t("Максимум"), type: "number", def: 100 },
-    { name: "period_s", label: window.t("Период, с"), type: "number", def: 10 },
-    { name: "phase", label: window.t("Фаза (доля периода)"), type: "number", def: 0 },
-  ],
-  random_uniform: [
-    { name: "min", label: window.t("Минимум"), type: "number", def: 0 },
-    { name: "max", label: window.t("Максимум"), type: "number", def: 100 },
-  ],
-  random_walk: [
-    { name: "min", label: window.t("Минимум"), type: "number", def: 0 },
-    { name: "max", label: window.t("Максимум"), type: "number", def: 100 },
-    { name: "step", label: window.t("Шаг"), type: "number", def: 1 },
-    { name: "mean_reversion", label: window.t("Возврат к среднему (от 0 до 1)"), type: "number", def: 0 },
-  ],
-  ramp_oneshot: [
-    { name: "from", label: window.t("От"), type: "number", def: 0 },
-    { name: "to", label: window.t("До"), type: "number", def: 100 },
-    { name: "duration_s", label: window.t("Длительность, с"), type: "number", def: 10 },
-    {
-      name: "then",
-      label: window.t("Дальше (hold, loop или число)"),
-      type: "text",
-      def: "hold",
-    },
-  ],
-  countdown: [
-    { name: "start", label: window.t("Старт"), type: "number", def: 100 },
-    { name: "step", label: window.t("Шаг"), type: "number", def: 1 },
-    { name: "min", label: window.t("Минимум"), type: "number", def: 0 },
-    { name: "interval_s", label: window.t("Период шага, с"), type: "number", def: 1 },
-  ],
-  step: [
-    { name: "values", label: window.t("Значения через запятую"), type: "text", def: "0, 1" },
-    { name: "interval_s", label: window.t("Период шага, с"), type: "number", def: 1 },
-  ],
-  follow: [{ name: "source", label: window.t("Источник (вида «hr:15»)"), type: "text", def: "hr:15" }],
-  toggle: [{ name: "period_s", label: window.t("Период, с"), type: "number", def: 1 }],
-  pwm: [
-    { name: "period_s", label: window.t("Период, с"), type: "number", def: 1 },
-    { name: "duty", label: window.t("Скважность (от 0 до 1)"), type: "number", def: 0.5 },
-  ],
-  random_bit: [{ name: "p", label: window.t("Вероятность 1 (от 0 до 1)"), type: "number", def: 0.5 }],
-  counter_bits: [
-    {
-      name: "bit",
-      label: window.t("Номер бита (пусто - на единицу меньше адреса)"),
-      type: "number",
-      def: null,
-      optional: true,
-    },
-  ],
-  follow_bit: [
-    { name: "source", label: window.t("Источник (вида «hr:15»)"), type: "text", def: "hr:15" },
-    { name: "bit", label: window.t("Номер бита"), type: "number", def: 0 },
-  ],
-};
+import {
+  collectParams as collectFormParams,
+  fillParams,
+  kindLabel,
+  kindsForArea,
+  renderParams as renderFormParams,
+} from "./behavior-form.js";
 
 function el(id) {
   return document.getElementById(id);
@@ -162,17 +43,8 @@ function applyPreset(name) {
   }
   el("bh-kind").value = preset.kind;
   renderParams();
-  for (const [key, value] of Object.entries(preset.params)) {
-    const input = el("bh-param-" + key);
-    if (!input) continue;
-    if (input.type === "checkbox") input.checked = Boolean(value);
-    else input.value = String(value);
-  }
+  fillParams(el("bh-params"), preset.params);
   el("bh-status").textContent = window.t("Пресет «{name}» загружен в форму - нажмите «Установить».", { name: name });
-}
-
-function kindsForArea(area) {
-  return area === "hr" || area === "ir" ? NUMERIC_KINDS : DISCRETE_KINDS;
 }
 
 function renderKinds() {
@@ -182,102 +54,22 @@ function renderKinds() {
   for (const kind of kindsForArea(el("bh-area").value)) {
     const option = document.createElement("option");
     option.value = kind;
-    option.textContent = kind + " - " + KIND_LABELS[kind];
+    option.textContent = kind + " - " + kindLabel(kind);
     select.appendChild(option);
   }
   if (kindsForArea(el("bh-area").value).includes(previous)) select.value = previous;
   renderParams();
 }
 
+// Поля параметров выбранного kind'а в контейнер #bh-params (общая схема —
+// behavior-form.js)
 function renderParams() {
-  const container = el("bh-params");
-  container.textContent = "";
-  const specs = PARAM_SPECS[el("bh-kind").value] || [];
-  for (const spec of specs) {
-    const label = document.createElement("label");
-    label.className = "bh-param";
-    label.textContent = spec.label + " ";
-    const input = document.createElement("input");
-    input.id = "bh-param-" + spec.name;
-    if (spec.type === "bool") {
-      input.type = "checkbox";
-      input.checked = Boolean(spec.def);
-    } else if (spec.type === "number") {
-      input.type = "number";
-      input.step = "any";
-      if (spec.def !== null && spec.def !== undefined) input.value = String(spec.def);
-    } else {
-      input.type = "text";
-      if (spec.def !== null && spec.def !== undefined) input.value = String(spec.def);
-    }
-    label.appendChild(input);
-    container.appendChild(label);
-  }
+  renderFormParams(el("bh-params"), el("bh-kind").value);
 }
 
-// Собрать params из формы: bool → checkbox, number → Number, text → строка
-// (step.values — список чисел из строки «0, 1»); пустое optional-поле не
-// отправляется — сервер возьмёт дефолт.
+// Собрать params из формы (типизация и optional-поля — в behavior-form.js)
 function collectParams() {
-  const params = {};
-  const specs = PARAM_SPECS[el("bh-kind").value] || [];
-  for (const spec of specs) {
-    const input = el("bh-param-" + spec.name);
-    if (!input) continue;
-    if (spec.type === "bool") {
-      params[spec.name] = input.checked;
-      continue;
-    }
-    const raw = input.value.trim();
-    if (raw === "") {
-      if (spec.optional) continue;
-      showError(window.t("заполните параметр «{label}»", { label: spec.label }));
-      return null;
-    }
-    if (spec.type === "number") {
-      const value = Number(raw);
-      if (Number.isNaN(value)) {
-        showError(window.t("параметр «{label}» должен быть числом", { label: spec.label }));
-        return null;
-      }
-      params[spec.name] = value;
-      continue;
-    }
-    if (spec.name === "values") {
-      const parts = raw.split(",").map((part) => part.trim()).filter(Boolean);
-      const values = [];
-      for (const part of parts) {
-        const value = Number(part);
-        if (Number.isNaN(value)) {
-          showError(window.t("параметр «{label}»: «{part}» - не число", { label: spec.label, part: part }));
-          return null;
-        }
-        values.push(value);
-      }
-      if (values.length === 0) {
-        showError(window.t("параметр «{label}»: нужен хотя бы один элемент", { label: spec.label }));
-        return null;
-      }
-      params[spec.name] = values;
-      continue;
-    }
-    if (spec.name === "then") {
-      // "hold" / "loop" — строки, иначе число (RampOneshotGenerator).
-      if (raw === "hold" || raw === "loop") {
-        params[spec.name] = raw;
-        continue;
-      }
-      const value = Number(raw);
-      if (Number.isNaN(value)) {
-        showError(window.t("параметр «{label}»: hold, loop или число", { label: spec.label }));
-        return null;
-      }
-      params[spec.name] = value;
-      continue;
-    }
-    params[spec.name] = raw;
-  }
-  return params;
+  return collectFormParams(el("bh-params"), el("bh-kind").value, showError);
 }
 
 function showError(text) {

@@ -1232,6 +1232,9 @@ _REG_NOTE_RU = (
     "адрес в таблице не показывается), 16-битный показывает слово регистра N. "
     "Выбор формата запоминается в браузере. Колонка «Тег» называет регистр: "
     "имя поведения slave 1..9 либо метрику времени slave 10. Колонка "
+    "«Поведение» выбирает генератор регистра (slave 1..9): выбор сразу "
+    "применяется, «⚙» открывает параметры и блокировку внешних записей — "
+    "поведения общие для всех пользователей; у slave 10 поведений нет. Колонка "
     "«Тренд, 60 с» рисует график значения строки за последнюю минуту в её "
     "формате."
 )
@@ -1246,8 +1249,11 @@ _REG_NOTE_EN = (
     "not shown in the table), a 16-bit one shows the word of register N. "
     "The format choice is remembered in the browser. The \"Tag\" column names "
     "the register: the behavior name for slave 1..9 or the time metric for "
-    "slave 10. The \"Trend, 60 s\" column plots the row value over the last "
-    "minute in its format."
+    "slave 10. The \"Behavior\" column picks the register generator (slave "
+    "1..9): the choice applies immediately, the gear opens its parameters and "
+    "the external-write lock - behaviors are shared across all users; slave 10 "
+    "has no behaviors. The \"Trend, 60 s\" column plots the row value over the "
+    "last minute in its format."
 )
 _REG_EDIT_RU = (
     "Редактирование CL/HR доступно прямо в таблице (клик по значению). "
@@ -1289,6 +1295,7 @@ def _registers_body(lang: Lang) -> str:
         '<table class="values reg-map">\n'
         f"  <thead><tr><th>{t(lang, 'Адрес', 'Address')}</th>"
         f"<th>{t(lang, 'Тег', 'Tag')}</th>"
+        f"<th>{t(lang, 'Поведение', 'Behavior')}</th>"
         f"<th>{t(lang, 'Формат', 'Format')}</th>"
         f"<th>{t(lang, 'Значение', 'Value')}</th>"
         f"<th>{t(lang, 'Тренд, 60 с', 'Trend, 60 s')}</th><th></th></tr></thead>\n"

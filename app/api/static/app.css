@@ -311,16 +311,28 @@ table.values td input{width:7rem;}
 table.values td select{width:7rem;}
 /* Фиксированные крайние колонки: правка значения не меняет ширину столбцов. */
 table.reg-map{table-layout:fixed;}
-table.reg-map th:first-child,table.reg-map td:first-child{width:7rem;}
-table.reg-map th:nth-child(2),table.reg-map td:nth-child(2){width:12rem;}
-table.reg-map th:nth-child(3),table.reg-map td:nth-child(3){width:9.5rem;}
-table.reg-map th:nth-child(4),table.reg-map td:nth-child(4){width:13rem;}
+table.reg-map th:first-child,table.reg-map td:first-child{width:7rem;} /* Адрес */
+table.reg-map th:nth-child(2),table.reg-map td:nth-child(2){width:9rem;} /* Тег */
+table.reg-map th:nth-child(3),table.reg-map td:nth-child(3){width:11rem;} /* Поведение */
+table.reg-map th:nth-child(4),table.reg-map td:nth-child(4){width:9.5rem;} /* Формат */
+table.reg-map th:nth-child(5),table.reg-map td:nth-child(5){width:13rem;} /* Значение */
 table.reg-map th:last-child,table.reg-map td:last-child{width:5rem;}
 table.reg-map td select{width:100%;}
 table.reg-map td .reg-bits{color:var(--text-muted);}
 table.reg-map td.tag{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 table.reg-map td.trend{padding:3px 8px;vertical-align:middle;}
 table.reg-map canvas.reg-trend{display:block;width:100%;height:28px;color:var(--accent-deep);}
+/* Поведение строки (TASK-716): селект kind + «⚙» и форма настроек */
+table.reg-map td .bh-cell-row{display:flex;gap:4px;align-items:center;}
+table.reg-map td .bh-cell-row select{flex:1;min-width:0;width:auto;}
+table.reg-map td .bh-cell-row button{flex:0 0 auto;padding:2px 6px;}
+table.reg-map tr.bh-edit td{background:var(--surface-2);vertical-align:top;}
+table.reg-map .bh-params{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px 14px;margin:4px 0 10px;}
+table.reg-map .bh-params .bh-param{display:flex;flex-direction:column;gap:3px;font-size:.92em;}
+table.reg-map .bh-params .bh-param input{width:100%;}
+table.reg-map .bh-edit label.check{display:inline-flex;align-items:center;gap:6px;}
+table.reg-map .bh-edit label.check input[type="checkbox"]{width:auto;margin:0;}
+table.reg-map .bh-edit .form-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0;}
 #chart-canvas{width:100%;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);}
 
 /* ---------- часовые пояса ---------- */
