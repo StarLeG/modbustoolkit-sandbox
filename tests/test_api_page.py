@@ -61,6 +61,8 @@ def test_registers_page_has_table_and_controls() -> None:
         'id="reg-body"',
         'id="reg-prev"',
         'id="reg-next"',
+        'id="reg-page-input"',
+        'id="reg-start"',
         "window.REGISTER_MAP",
         'src="/static/registers.js"',
     ):
@@ -92,6 +94,22 @@ def test_registers_page_has_format_select() -> None:
     with _client() as client:
         response = client.get("/registers")
     assert 'id="reg-format"' in response.text
+
+
+def test_registers_js_pagination() -> None:
+    """Окно из 10 регистров: переход по начальному адресу и номеру страницы."""
+    with _client() as client:
+        response = client.get("/static/registers.js")
+    js = response.text
+    for fragment in (
+        "PAGE_SIZE = 10",
+        "indexForAddress",
+        "gotoStart",
+        "applyStartField",
+        "applyPageField",
+        "syncJumpFields",
+    ):
+        assert fragment in js, fragment
 
 
 def test_registers_js_formats_values() -> None:

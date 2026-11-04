@@ -292,7 +292,18 @@ table.values tr:hover td{background:var(--surface-2);}
 .note{color:var(--text-muted);font-size:13.5px;max-width:none;}
 
 /* ---------- карта регистров ---------- */
-#reg-page{margin:0 0.75rem;}
+/* тулбар навигации: группы «метка + поле» не разваливаются при переносе */
+.reg-nav{display:flex;flex-wrap:wrap;align-items:center;gap:12px 28px;margin:12px 0 18px;}
+.reg-nav .reg-group{display:flex;align-items:center;gap:10px;}
+.reg-nav label{display:inline-flex;align-items:center;gap:6px;margin:0;}
+.reg-nav label input{margin-left:0;}
+#reg-page-input{width:4.2rem;}
+#reg-start{width:5.2rem;}
+#reg-page{color:var(--text-muted);font-family:var(--mono);font-size:12.5px;}
+/* ползунки числовых полей шумят в тулбаре — остаётся ввод с клавиатуры (Enter) */
+.reg-nav input[type="number"]{appearance:textfield;-moz-appearance:textfield;}
+.reg-nav input::-webkit-outer-spin-button,
+.reg-nav input::-webkit-inner-spin-button{appearance:none;margin:0;}
 table.values td.editable{cursor:pointer;}
 table.values td.editable:hover{background:color-mix(in srgb,var(--accent) 12%,transparent);}
 table.values td.editing{outline:1px solid var(--accent);}
