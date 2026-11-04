@@ -1224,12 +1224,14 @@ def _register_map_json() -> str:
 _REG_NOTE_RU = (
     "Значения обновляются в реальном времени, без перезагрузки страницы, и "
     "общие для всех подключений. Запись любого пользователя сразу видна "
-    "остальным и заменяет прежнее значение."
+    "остальным и заменяет прежнее значение. Таблица показывает 10 регистров; "
+    "переход — по начальному адресу или номеру страницы (Enter)."
 )
 _REG_NOTE_EN = (
     "Values update in real time, no page reload needed, and are shared "
     "across all connections. Any user write is immediately visible to "
-    "everyone else and replaces the previous value."
+    "everyone else and replaces the previous value. The table shows 10 "
+    "registers; jump by start address or page number (Enter)."
 )
 _REG_EDIT_RU = (
     "Редактирование CL/HR доступно прямо в таблице (клик по значению). "
@@ -1269,18 +1271,25 @@ def _registers_body(lang: Lang) -> str:
         f'  <label>{t(lang, "Область", "Area")} <select id="reg-area"></select></label>\n'
         f'  <label>{t(lang, "Формат", "Format")} <select id="reg-format"></select></label>\n'
         "</div>\n"
-        '<p class="note" id="reg-fmt"></p>\n'
         '<table class="values reg-map">\n'
         f"  <thead><tr><th>{t(lang, 'Адрес', 'Address')}</th>"
         f"<th>{t(lang, 'Значение', 'Value')}</th><th></th></tr></thead>\n"
         '  <tbody id="reg-body"></tbody>\n'
         "</table>\n"
         '<p id="reg-status" role="status"></p>\n'
-        "<p>\n"
-        f'  <button id="reg-prev" type="button">{t(lang, "Назад", "Back")}</button>\n'
-        '  <span id="reg-page" role="status"></span>\n'
-        f'  <button id="reg-next" type="button">{t(lang, "Вперёд", "Next")}</button>\n'
-        "</p>\n"
+        '<div class="reg-nav">\n'
+        '  <span class="reg-group">\n'
+        f'    <button id="reg-prev" type="button">{t(lang, "Назад", "Back")}</button>\n'
+        f'    <label>{t(lang, "Страница", "Page")} '
+        '<input id="reg-page-input" type="number" min="1" step="1"></label>\n'
+        '    <span id="reg-page" role="status"></span>\n'
+        f'    <button id="reg-next" type="button">{t(lang, "Вперёд", "Next")}</button>\n'
+        "  </span>\n"
+        '  <span class="reg-group">\n'
+        f'    <label>{t(lang, "Начальный адрес", "Start address")} '
+        '<input id="reg-start" type="number" min="1" step="1"></label>\n'
+        "  </span>\n"
+        "</div>\n"
         f"<h2>{t(lang, 'Избранное', 'Favorites')}</h2>\n"
         f'<p class="note">{t(lang, _WATCH_NOTE_RU, _WATCH_NOTE_EN)}</p>\n'
         '<table class="values">\n'

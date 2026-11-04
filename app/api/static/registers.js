@@ -1,11 +1,13 @@
 // Карта регистров (TASK-711, 712): таблица адресов по слейву, live через WS.
 // Геометрия карты — window.REGISTER_MAP (серверный рендер из SLAVE_SPECS).
-// Пагинация — по 64 адреса; WS-подписка только на адреса видимой страницы.
+// Пагинация — по 10 адресов: окно начинается с произвольного «Начального
+// адреса», кнопки «Назад»/«Вперёд» сдвигают окно на страницу, поле «Страница» —
+// быстрый переход по номеру. WS-подписка только на адреса видимого окна.
 // Форматы значений (TASK-712): DEC / DEC (знаковый) / HEX / FLOAT — по формату
 // регистра слейва; для cl/di — только 0/1. Режимы FLOAT для uint32 и DEC/HEX
 // для float — reinterpret битов значения.
 
-const PAGE_SIZE = 64;
+const PAGE_SIZE = 10;
 const RECONNECT_MAX_MS = 15000;
 
 const MODE_LABELS = {
@@ -24,7 +26,7 @@ const state = {
   mode: "dec",
   addresses: [],
   values: new Map(),
-  page: 0,
+  start: 0, // индекс первого отображаемого адреса
   ws: null,
   reconnectAttempt: 0,
   reconnectTimer: null,
@@ -208,8 +210,59 @@ function addressesOf(area) {
 }
 
 function pageAddresses() {
-  const start = state.page * PAGE_SIZE;
-  return state.addresses.slice(start, start + PAGE_SIZE);
+  return state.addresses.slice(state.start, state.start + PAGE_SIZE);
+}
+
+function pagesCount() {
+  return Math.max(1, Math.ceil(state.addresses.length / PAGE_SIZE));
+}
+
+// Ближайший адрес области, не меньше заданного: у slave 10 в карте есть «дырки»
+function indexForAddress(address) {
+  for (let index = 0; index < state.addresses.length; index += 1) {
+    if (state.addresses[index] >= address) return index;
+  }
+  return Math.max(0, state.addresses.length - 1);
+}
+
+function gotoStart(index) {
+  const total = state.addresses.length;
+  if (total === 0) return;
+  showError("");
+  state.start = Math.max(0, Math.min(index, total - 1));
+  renderTable();
+  subscribe();
+  loadRest();
+}
+
+function stepPage(delta) {
+  // ход кнопками — целыми страницами; последняя страница может быть короче
+  const maxStart = (pagesCount() - 1) * PAGE_SIZE;
+  gotoStart(Math.max(0, Math.min(state.start + delta, maxStart)));
+}
+
+function applyStartField() {
+  const raw = el("reg-start").value.trim();
+  if (raw === "") return;
+  const address = Number(raw);
+  if (!Number.isFinite(address) || address < 1) {
+    showError(window.t("Адрес - целое число от 1 и больше (из docs/HRIR_SPEC.md)."));
+    syncJumpFields(true);
+    return;
+  }
+  gotoStart(indexForAddress(Math.round(address)));
+}
+
+function applyPageField() {
+  const raw = el("reg-page-input").value.trim();
+  if (raw === "") return;
+  const page = Number(raw);
+  if (!Number.isFinite(page) || page < 1) {
+    showError(window.t("Страница - целое число от 1 и больше."));
+    syncJumpFields(true);
+    return;
+  }
+  gotoStart((Math.min(Math.round(page), pagesCount()) - 1) * PAGE_SIZE);
 }
 
 function renderAreas() {
@@ -224,7 +277,6 @@ function renderAreas() {
   }
   state.area = available.includes(state.area) ? state.area : available[0];
   select.value = state.area;
-  el("reg-fmt").textContent = window.t("Формат: {fmt}", { fmt: spec().fmt });
 }
 
 function renderFormats() {
@@ -280,10 +332,33 @@ function renderTable() {
     row.appendChild(cellStar);
     body.appendChild(row);
   }
-  const pages = Math.max(1, Math.ceil(state.addresses.length / PAGE_SIZE));
-  el("reg-page").textContent = window.t("Страница {page} из {pages}", { page: state.page + 1, pages: pages });
-  el("reg-prev").disabled = state.page === 0;
-  el("reg-next").disabled = state.page + 1 >= pages;
+  updateNav();
+}
+
+function updateNav() {
+  el("reg-page").textContent = window.t("из {pages}", { pages: pagesCount() });
+  el("reg-prev").disabled = state.start === 0;
+  el("reg-next").disabled = state.start >= (pagesCount() - 1) * PAGE_SIZE;
+  syncJumpFields();
+}
+
+// Поля перехода показывают текущую позицию; пока в них печатают, не перетираем
+function syncJumpFields(force) {
+  const total = state.addresses.length;
+  const startField = el("reg-start");
+  const pageField = el("reg-page-input");
+  if (total > 0) {
+    startField.min = String(state.addresses[0]);
+    startField.max = String(state.addresses[total - 1]);
+  }
+  pageField.min = "1";
+  pageField.max = String(pagesCount());
+  if (total > 0 && (force || document.activeElement !== startField)) {
+    startField.value = String(state.addresses[state.start]);
+  }
+  if (force || document.activeElement !== pageField) {
+    pageField.value = String(Math.floor(state.start / PAGE_SIZE) + 1);
+  }
 }
 
 function applyFrame(frame) {
@@ -343,7 +418,7 @@ function connect() {
 
 function refresh() {
   state.addresses = addressesOf(state.area);
-  state.page = 0;
+  state.start = 0;
   state.values.clear();
   renderFormats();
   renderTable();
@@ -366,19 +441,18 @@ function init() {
     renderTable();
   });
   el("reg-prev").addEventListener("click", function () {
-    if (state.page > 0) {
-      state.page -= 1;
-      renderTable();
-      subscribe();
-    }
+    stepPage(-PAGE_SIZE);
   });
   el("reg-next").addEventListener("click", function () {
-    const pages = Math.ceil(state.addresses.length / PAGE_SIZE);
-    if (state.page + 1 < pages) {
-      state.page += 1;
-      renderTable();
-      subscribe();
-    }
+    stepPage(PAGE_SIZE);
+  });
+  el("reg-start").addEventListener("change", applyStartField);
+  el("reg-start").addEventListener("keydown", function (event) {
+    if (event.key === "Enter") applyStartField();
+  });
+  el("reg-page-input").addEventListener("change", applyPageField);
+  el("reg-page-input").addEventListener("keydown", function (event) {
+    if (event.key === "Enter") applyPageField();
   });
   renderAreas();
   refresh();
