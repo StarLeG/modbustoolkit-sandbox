@@ -1230,8 +1230,10 @@ _REG_NOTE_RU = (
     "uint32/int32/float32 с порядком слов ABCD/CDAB/BADC/DCBA (и HEX32) — "
     "32-битный формат объединяет регистры N и N+1 одной строкой (следующий "
     "адрес в таблице не показывается), 16-битный показывает слово регистра N. "
-    "Выбор формата запоминается в браузере. Колонка «Тренд, 60 с» рисует "
-    "график значения строки за последнюю минуту в её формате."
+    "Выбор формата запоминается в браузере. Колонка «Тег» называет регистр: "
+    "имя поведения slave 1..9 либо метрику времени slave 10. Колонка "
+    "«Тренд, 60 с» рисует график значения строки за последнюю минуту в её "
+    "формате."
 )
 _REG_NOTE_EN = (
     "Values update in real time, no page reload needed, and are shared "
@@ -1242,8 +1244,10 @@ _REG_NOTE_EN = (
     "uint32/int32/float32 with ABCD/CDAB/BADC/DCBA word order (and HEX32) — "
     "a 32-bit format spans registers N and N+1 in one row (the next address is "
     "not shown in the table), a 16-bit one shows the word of register N. "
-    "The format choice is remembered in the browser. The \"Trend, 60 s\" column "
-    "plots the row value over the last minute in its format."
+    "The format choice is remembered in the browser. The \"Tag\" column names "
+    "the register: the behavior name for slave 1..9 or the time metric for "
+    "slave 10. The \"Trend, 60 s\" column plots the row value over the last "
+    "minute in its format."
 )
 _REG_EDIT_RU = (
     "Редактирование CL/HR доступно прямо в таблице (клик по значению). "
@@ -1284,6 +1288,7 @@ def _registers_body(lang: Lang) -> str:
         "</div>\n"
         '<table class="values reg-map">\n'
         f"  <thead><tr><th>{t(lang, 'Адрес', 'Address')}</th>"
+        f"<th>{t(lang, 'Тег', 'Tag')}</th>"
         f"<th>{t(lang, 'Формат', 'Format')}</th>"
         f"<th>{t(lang, 'Значение', 'Value')}</th>"
         f"<th>{t(lang, 'Тренд, 60 с', 'Trend, 60 s')}</th><th></th></tr></thead>\n"

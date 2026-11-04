@@ -10,6 +10,8 @@
 // Кадры несут логические значения по формату слейва, reinterpretation идёт на
 // клиенте через WIRE_PERM — зеркало перестановок app/modbus/codec.py.
 // Выбранный формат хранится в localStorage и переживает перезагрузку.
+// Колонка «Тег» — имя сигнала: поведение регистра (slave 1..9, конфиг из
+// REST /api/modbus/behaviors) либо метрика времени (slave 10, HRIR_SPEC).
 // Колонка «Тренд, 60 с» — спарклайн строки в её формате: кольцевой буфер
 // сырых значений за 60 с, перерисовка раз в 500 мс.
 
@@ -62,6 +64,7 @@ const state = {
   addresses: [],
   values: new Map(),
   history: new Map(), // адрес → [{t, v}] сырые значения за HISTORY_S
+  behaviors: new Map(), // адрес → поведение из REST (имя для тега строки)
   start: 0, // индекс первого отображаемого адреса
   ws: null,
   reconnectAttempt: 0,
@@ -276,6 +279,56 @@ function formatNumber(number, code) {
 function formatDisplay(address) {
   const code = rowCode(address);
   return formatNumber(rowNumber(address, code), code);
+}
+
+// ---------- теги: имена сигналов строк ----------
+
+// Имена поведений — те же строки, что на странице настройки поведений (i18n.js)
+const KIND_RU = {
+  constant: "константа",
+  counter: "счётчик",
+  sawtooth: "пила",
+  triangle: "треугольник",
+  meander: "меандр",
+  sine: "синус",
+  random_uniform: "равномерный шум",
+  random_walk: "блуждание",
+  ramp_oneshot: "переход (ramp)",
+  countdown: "обратный отсчёт",
+  step: "ступеньки",
+  follow: "копия регистра",
+  toggle: "переключение",
+  pwm: "ШИМ (скважность)",
+  random_bit: "случайный бит",
+  counter_bits: "биты счётчика секунд",
+  follow_bit: "копия бита",
+};
+
+// Метрики блока зоны slave 10 (docs/HRIR_SPEC.md): смещения 1..10 внутри зоны
+const S10_METRICS = [
+  "Год", "Месяц", "День", "Час", "Минута", "Секунда",
+  "День недели", "Смещение UTC", "резерв", "резерв",
+];
+
+// Тег slave 10: зона Z=0..26 и метрика её блока; 300..301 — Unix timestamp
+function slave10Tag(address) {
+  if (address >= 300) return "Unix timestamp";
+  const zone = Math.floor((address - 1) / 10);
+  const metric = S10_METRICS[(address - 1) % 10];
+  const hours = zone <= 14 ? zone : zone - 14;
+  const sign = zone <= 14 ? "+" : "-";
+  return "UTC" + sign + (hours < 10 ? "0" : "") + hours + " · " + window.t(metric);
+}
+
+// Тег строки: поведение регистра (slave 1..9) либо метрика времени (slave 10)
+function tagText(address) {
+  if (state.slave === 10) return slave10Tag(address);
+  const item = state.behaviors.get(address);
+  if (!item) return "";
+  if (item.kind === "follow" && item.params && item.params.source) {
+    return window.t("копия {source}", { source: item.params.source });
+  }
+  return window.t(KIND_RU[item.kind] || item.kind);
 }
 
 // ---------- тренд: история строки за 60 с ----------
@@ -729,6 +782,11 @@ function renderTable() {
     const cellAddress = document.createElement("td");
     cellAddress.textContent = String(address);
 
+    const cellTag = document.createElement("td");
+    cellTag.className = "tag";
+    cellTag.textContent = tagText(address);
+    cellTag.title = cellTag.textContent;
+
     const cellFormat = document.createElement("td");
     if (state.area === "cl" || state.area === "di") {
       const bits = document.createElement("span");
@@ -775,6 +833,7 @@ function renderTable() {
     cellStar.appendChild(star);
 
     row.appendChild(cellAddress);
+    row.appendChild(cellTag);
     row.appendChild(cellFormat);
     row.appendChild(cellValue);
     row.appendChild(cellTrend);
@@ -845,6 +904,29 @@ async function loadRest() {
   }
 }
 
+// Конфиг поведений для тегов: по слейву и области, целиком (дефолты включены).
+// У slave 10 поведений нет — его теги считает slave10Tag.
+async function loadBehaviors() {
+  const slave = state.slave;
+  const area = state.area;
+  if (slave === 10) return;
+  try {
+    const response = await fetch(
+      "/api/modbus/behaviors?slave=" + slave + "&area=" + area
+    );
+    if (!response.ok) return;
+    const body = await response.json();
+    if (slave !== state.slave || area !== state.area) return; // опоздавший ответ
+    state.behaviors.clear();
+    for (const item of body.items || []) {
+      state.behaviors.set(item.address, item);
+    }
+    renderTable();
+  } catch (error) {
+    // API недоступен — теги остаются пустыми
+  }
+}
+
 // Адреса видимого окна + следующий адрес: для 32-битной пары N, N+1 последней
 // строки нужны оба регистра. Адрес берётся из сетки — чужой сервер отклоняет.
 function trackedAddresses() {
@@ -891,7 +973,9 @@ function refresh() {
   state.start = 0;
   state.values.clear();
   state.history.clear(); // другой slave/область — своя история
+  state.behaviors.clear();
   renderTable();
+  loadBehaviors(); // теги строк догоняют после ответа API
   subscribe();
   loadRest();
 }

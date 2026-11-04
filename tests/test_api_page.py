@@ -164,6 +164,31 @@ def test_registers_js_pair_span() -> None:
         assert fragment in js, fragment
 
 
+def test_registers_page_has_tag_column() -> None:
+    """Колонка «Тег» после адреса: имя сигнала вместо голого номера."""
+    with _client() as client:
+        response = client.get("/registers")
+    html = response.text
+    assert "<th>Тег</th>" in html  # шапка таблицы, сразу после адреса
+    assert "называет регистр" in html  # подпись под таблицей
+
+
+def test_registers_js_tags() -> None:
+    """Теги строк: поведения slave 1..9 из REST и метрики slave 10 (HRIR_SPEC)."""
+    with _client() as client:
+        response = client.get("/static/registers.js")
+    js = response.text
+    for fragment in (
+        "tagText",
+        "slave10Tag",
+        "KIND_RU",
+        "/api/modbus/behaviors",
+        "Unix timestamp",
+        "Смещение UTC",
+    ):
+        assert fragment in js, fragment
+
+
 def test_registers_page_has_trend_column() -> None:
     """Колонка «Тренд, 60 с» — спарклайн строки в карте регистров."""
     with _client() as client:
