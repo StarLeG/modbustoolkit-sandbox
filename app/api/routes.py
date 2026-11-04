@@ -516,7 +516,7 @@ def get_state(
         slave=slave,
         fmt=smap.spec.fmt,
         areas={a: area_values(smap, a, services.registry) for a in areas_to_read},
-        tags=services.tags.for_slave(slave),
+        tags=services.tags.for_areas(slave, areas_to_read),
     )
 
 

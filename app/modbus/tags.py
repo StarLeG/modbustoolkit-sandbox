@@ -7,6 +7,8 @@
 """
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from app.modbus.behavior import Binding
 from app.modbus.types import SLAVE_SPECS, Area
 
@@ -56,13 +58,26 @@ class TagStore:
         """Сбросить тег к автоматическому; `True` — тег был и удалён."""
         return self._tags.pop((slave, area, address), None) is not None
 
-    def for_slave(self, slave: int) -> dict[str, str]:
-        """Теги слейва вида `{адрес: тег}` (для кадра состояния, TASK-718)."""
+    def for_area(self, slave: int, area: Area) -> dict[str, str]:
+        """Теги одной области вида `{адрес: тег}` (для кадра состояния, TASK-718)."""
         return {
             str(address): tag
-            for (tag_slave, _area, address), tag in self._tags.items()
-            if tag_slave == slave
+            for (tag_slave, tag_area, address), tag in self._tags.items()
+            if tag_slave == slave and tag_area == area
         }
+
+    def for_areas(self, slave: int, areas: Iterable[Area]) -> dict[str, dict[str, str]]:
+        """Теги областей вида `{область: {адрес: тег}}`; пустые области опущены.
+
+        Теги разных областей не смешиваются: у cl:5 и hr:5 один адрес, но имена
+        независимы.
+        """
+        out: dict[str, dict[str, str]] = {}
+        for area in areas:
+            tags = self.for_area(slave, area)
+            if tags:
+                out[area] = tags
+        return out
 
     def snapshot(self) -> dict[str, dict[Area, dict[str, str]]]:
         """Все теги вида `{slave: {area: {адрес: тег}}}` (GET /api/modbus/tags)."""

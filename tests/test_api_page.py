@@ -238,6 +238,7 @@ def test_registers_js_tags_editable() -> None:
         '"PUT"',
         '"DELETE"',
         "state.tags",
+        "frame.tags[state.area]",  # теги кадра по областям не смешиваются
     ):
         assert fragment in js, fragment
     with _client() as client:

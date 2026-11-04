@@ -84,14 +84,29 @@ def test_bindings_are_independent() -> None:
     assert len(store) == 3
 
 
-def test_for_slave_returns_address_map() -> None:
+def test_for_area_returns_address_map() -> None:
     store = TagStore()
     store.set(1, "hr", 5, "HR-5")
     store.set(1, "di", 2, "DI-2")
     store.set(2, "hr", 5, "Slave2-5")
-    assert store.for_slave(1) == {"5": "HR-5", "2": "DI-2"}
-    assert store.for_slave(2) == {"5": "Slave2-5"}
-    assert store.for_slave(3) == {}
+    assert store.for_area(1, "hr") == {"5": "HR-5"}
+    assert store.for_area(1, "di") == {"2": "DI-2"}
+    assert store.for_area(2, "hr") == {"5": "Slave2-5"}
+    assert store.for_area(1, "cl") == {}
+    assert store.for_area(3, "hr") == {}
+
+
+def test_for_areas_keeps_areas_independent() -> None:
+    """Теги одного адреса в разных областях не сталкиваются (cl:5 и hr:5)."""
+    store = TagStore()
+    store.set(1, "hr", 5, "HR-5")
+    store.set(1, "cl", 5, "CL-5")
+    store.set(1, "di", 2, "DI-2")
+    assert store.for_areas(1, ("cl", "di", "hr", "ir")) == {
+        "cl": {"5": "CL-5"},
+        "di": {"2": "DI-2"},
+        "hr": {"5": "HR-5"},
+    }
 
 
 def test_snapshot_groups_by_slave_and_area() -> None:

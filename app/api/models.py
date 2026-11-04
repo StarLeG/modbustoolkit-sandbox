@@ -116,8 +116,8 @@ class StateResponse(BaseModel):
     slave: int
     fmt: RegisterFormat
     areas: dict[Area, dict[str, int | float | bool]]
-    #: Пользовательские теги слейва `{адрес: тег}` (TASK-718); без тегов — пусто.
-    tags: dict[str, str] = {}
+    #: Пользовательские теги `{область: {адрес: тег}}` (TASK-718); без тегов — пусто.
+    tags: dict[str, dict[str, str]] = {}
 
 
 class WriteIn(BaseModel):

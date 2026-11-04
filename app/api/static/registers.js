@@ -919,10 +919,11 @@ function applyFrame(frame) {
     state.values.set(number, value);
     if (tracked.has(number)) pushHistory(number, value, now);
   }
-  // Пользовательские теги слейва (TASK-718): кадр несёт их целиком
+  // Пользовательские теги областей кадра (TASK-718): {область: {адрес: тег}};
+  // имена cl:5 и hr:5 независимы, поэтому берём только текущую область
   if (frame.tags) {
     state.tags = new Map(
-      Object.entries(frame.tags).map(function (pair) {
+      Object.entries(frame.tags[state.area] || {}).map(function (pair) {
         return [Number(pair[0]), pair[1]];
       })
     );

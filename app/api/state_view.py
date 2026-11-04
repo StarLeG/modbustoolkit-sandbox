@@ -69,7 +69,8 @@ def state_payload(
     """Кадр состояния `{"slave", "fmt", "areas", "tags"}` (GET /state и /ws/state, ADR-005 п. 2).
 
     `addresses` — фильтр сетки значений; `None` — вся сетка. `tags` — только
-    пользовательские теги слейва (TASK-718); без тегов поле пустое.
+    пользовательские теги областей кадра `{область: {адрес: тег}}` (TASK-718);
+    без тегов поле пустое.
     """
     smap = maps[slave]
     wanted = set(addresses) if addresses is not None else None
@@ -79,5 +80,5 @@ def state_payload(
         if wanted is not None:
             values = {k: v for k, v in values.items() if int(k) in wanted}
         out[area] = values
-    user_tags = tags.for_slave(slave) if tags is not None else {}
+    user_tags = tags.for_areas(slave, areas) if tags is not None else {}
     return {"slave": slave, "fmt": smap.spec.fmt.value, "areas": out, "tags": user_tags}

@@ -147,7 +147,19 @@ def test_state_includes_tags() -> None:
     with _client(services) as client:
         client.put("/api/modbus/tags/1/hr/5", json={"tag": "Насос 1"})
         body = client.get("/api/modbus/state", params={"slave": 1, "area": "hr"}).json()
-    assert body["tags"] == {"5": "Насос 1"}
+    assert body["tags"] == {"hr": {"5": "Насос 1"}}
+
+
+def test_state_tags_do_not_mix_areas() -> None:
+    """Теги cl:5 и hr:5 независимы: кадр не смешивает одинаковые адреса областей."""
+    services = build_services(Config())
+    with _client(services) as client:
+        client.put("/api/modbus/tags/1/hr/5", json={"tag": "HR-5"})
+        client.put("/api/modbus/tags/1/cl/5", json={"tag": "CL-5"})
+        full = client.get("/api/modbus/state", params={"slave": 1}).json()
+        one = client.get("/api/modbus/state", params={"slave": 1, "area": "cl"}).json()
+    assert full["tags"] == {"cl": {"5": "CL-5"}, "hr": {"5": "HR-5"}}
+    assert one["tags"] == {"cl": {"5": "CL-5"}}
 
 
 def test_tags_shared_last_write_wins() -> None:
