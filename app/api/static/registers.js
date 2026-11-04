@@ -10,10 +10,14 @@
 // Кадры несут логические значения по формату слейва, reinterpretation идёт на
 // клиенте через WIRE_PERM — зеркало перестановок app/modbus/codec.py.
 // Выбранный формат хранится в localStorage и переживает перезагрузку.
+// Колонка «Тренд, 60 с» — спарклайн строки в её формате: кольцевой буфер
+// сырых значений за 60 с, перерисовка раз в 500 мс.
 
 const PAGE_SIZE = 10;
 const RECONNECT_MAX_MS = 15000;
 const FORMATS_KEY = "modbus-reg-formats";
+const HISTORY_S = 60;
+const TREND_H = 28;
 
 // WIRE_PERM[order][i] — индекс байта значения (A=0, B=1, C=2, D=3),
 // попадающего в i-й байт на проводе (байты внутри регистра big-endian).
@@ -57,6 +61,7 @@ const state = {
   area: null,
   addresses: [],
   values: new Map(),
+  history: new Map(), // адрес → [{t, v}] сырые значения за HISTORY_S
   start: 0, // индекс первого отображаемого адреса
   ws: null,
   reconnectAttempt: 0,
@@ -271,6 +276,128 @@ function formatNumber(number, code) {
 function formatDisplay(address) {
   const code = rowCode(address);
   return formatNumber(rowNumber(address, code), code);
+}
+
+// ---------- тренд: история строки за 60 с ----------
+
+function samplesOf(address) {
+  return state.history.get(address) || [];
+}
+
+function pushHistory(address, value, now) {
+  let samples = state.history.get(address);
+  if (!samples) {
+    samples = [];
+    state.history.set(address, samples);
+  }
+  samples.push({ t: now, v: value });
+  while (samples.length > 0 && samples[0].t < now - HISTORY_S * 1000) {
+    samples.shift();
+  }
+}
+
+// Откуда берётся слово регистра N: строка-продолжение слота (slave 10, IR 301)
+// живёт в истории адреса-заголовка (300) младшим словом
+function sampleSource(address) {
+  if (
+    slotOf(address).width === 16 &&
+    slotOf(address - 1).width === 32 &&
+    state.addresses.includes(address - 1)
+  ) {
+    return { address: address - 1, word: 1 };
+  }
+  return { address: address, word: 0 };
+}
+
+// Ряд [{t, v}] строки в текущем формате: значения преобразуются так же,
+// как ячейка «Значение»; пара N, N+1 собирается по меткам времени кадра
+function seriesFor(address, code) {
+  const out = [];
+  const push = function (t, words) {
+    out.push({
+      t: t,
+      v: codeWidth(code) === 16
+        ? (code === "int16" ? toSigned(words[0], 16) : words[0])
+        : numberFromWords(words, code),
+    });
+  };
+  if (state.area === "cl" || state.area === "di") {
+    for (const sample of samplesOf(address)) out.push({ t: sample.t, v: sample.v ? 1 : 0 });
+    return out;
+  }
+  const slot = slotOf(address);
+  if (slot.width === 32) {
+    // слот N, N+1 целиком лежит в одном логическом значении
+    for (const sample of samplesOf(address)) push(sample.t, valueToWords(sample.v, slot.fmt));
+    return out;
+  }
+  const source = sampleSource(address);
+  const first = samplesOf(source.address).map(function (sample) {
+    return {
+      t: sample.t,
+      v: valueToWords(sample.v, slotOf(source.address).fmt)[source.word],
+    };
+  });
+  if (codeWidth(code) === 16) {
+    for (const sample of first) push(sample.t, [sample.v]);
+    return out;
+  }
+  const second = new Map();
+  for (const sample of samplesOf(address + 1)) {
+    second.set(sample.t, valueToWords(sample.v, slotOf(address + 1).fmt)[0]);
+  }
+  for (const sample of first) {
+    if (second.has(sample.t)) push(sample.t, [sample.v, second.get(sample.t)]);
+  }
+  return out;
+}
+
+// Спарклайн строки: линия по истории, масштаб по min/max (как в minichart.js)
+function drawSpark(canvas, address) {
+  const now = Date.now();
+  const from = now - HISTORY_S * 1000;
+  const points = seriesFor(address, rowCode(address)).filter(function (point) {
+    return point.t >= from && Number.isFinite(point.v);
+  });
+  const dpr = window.devicePixelRatio || 1;
+  const width = canvas.clientWidth || 120;
+  const wanted = Math.round(width * dpr);
+  if (canvas.width !== wanted) {
+    canvas.width = wanted;
+    canvas.height = Math.round(TREND_H * dpr);
+  }
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, width, TREND_H);
+  if (points.length < 2) return; // точки только накапливаются
+  let min = Infinity;
+  let max = -Infinity;
+  for (const point of points) {
+    if (point.v < min) min = point.v;
+    if (point.v > max) max = point.v;
+  }
+  if (min === max) {
+    min -= 1;
+    max += 1;
+  }
+  const pad = 2; // линия не прилипает к краям канвы
+  ctx.strokeStyle = getComputedStyle(canvas).color;
+  ctx.lineWidth = 1.25;
+  ctx.beginPath();
+  points.forEach(function (point, index) {
+    const x = pad + ((point.t - from) / (HISTORY_S * 1000)) * (width - 2 * pad);
+    const y = pad + (1 - (point.v - min) / (max - min)) * (TREND_H - 2 * pad);
+    if (index === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+}
+
+function drawTrends() {
+  for (const address of visibleRows()) {
+    const canvas = el("reg-trend-" + address);
+    if (canvas) drawSpark(canvas, address);
+  }
 }
 
 function editable() {
@@ -624,6 +751,14 @@ function renderTable() {
       });
     }
 
+    const cellTrend = document.createElement("td");
+    cellTrend.className = "trend";
+    const trend = document.createElement("canvas");
+    trend.className = "reg-trend";
+    trend.id = "reg-trend-" + address;
+    trend.title = window.t("Тренд, 60 с");
+    cellTrend.appendChild(trend);
+
     const cellStar = document.createElement("td");
     const star = document.createElement("button");
     star.type = "button";
@@ -642,9 +777,11 @@ function renderTable() {
     row.appendChild(cellAddress);
     row.appendChild(cellFormat);
     row.appendChild(cellValue);
+    row.appendChild(cellTrend);
     row.appendChild(cellStar);
     body.appendChild(row);
   }
+  drawTrends();
   updateNav();
 }
 
@@ -677,10 +814,13 @@ function syncJumpFields(force) {
 // ---------- WS / REST ----------
 
 function applyFrame(frame) {
+  const now = Date.now();
+  const tracked = new Set(trackedAddresses());
   const values = (frame.areas && frame.areas[state.area]) || {};
   for (const [address, value] of Object.entries(values)) {
     const number = Number(address);
     state.values.set(number, value);
+    if (tracked.has(number)) pushHistory(number, value, now);
     const cell = el("reg-cell-" + address);
     if (cell && !cell.classList.contains("editing")) {
       cell.textContent = formatDisplay(number);
@@ -745,6 +885,7 @@ function refresh() {
   state.addresses = addressesOf(state.area);
   state.start = 0;
   state.values.clear();
+  state.history.clear(); // другой slave/область — своя история
   renderTable();
   subscribe();
   loadRest();
@@ -777,6 +918,7 @@ function init() {
   renderAreas();
   refresh();
   connect();
+  setInterval(drawTrends, 500); // спарклайны обновляются раз в 500 мс (как график избранного)
 }
 
 init();

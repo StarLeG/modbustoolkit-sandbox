@@ -107,6 +107,7 @@
     "Ошибка записи: {error}": "Write error: {error}",
     "Нажмите, чтобы изменить (CL/HR общие, last-write-wins)": "Click to edit (CL/HR are shared, last-write-wins)",
     "В избранное": "Add to favorites",
+    "Тренд, 60 с": "Trend, 60 s",
     "из {pages}": "of {pages}",
     "Страница - целое число от 1 и больше.": "Page must be an integer of 1 or more.",
     "Выберите файл снимка: {name}.": "Choose a snapshot file: {name}.",

@@ -164,6 +164,31 @@ def test_registers_js_pair_span() -> None:
         assert fragment in js, fragment
 
 
+def test_registers_page_has_trend_column() -> None:
+    """Колонка «Тренд, 60 с» — спарклайн строки в карте регистров."""
+    with _client() as client:
+        response = client.get("/registers")
+    html = response.text
+    assert "Тренд, 60 с" in html  # шапка таблицы
+    assert "за последнюю минуту" in html  # подпись под таблицей
+
+
+def test_registers_js_trend() -> None:
+    """JS карты регистров копит историю 60 с и рисует спарклайны на canvas."""
+    with _client() as client:
+        response = client.get("/static/registers.js")
+    js = response.text
+    for fragment in (
+        "HISTORY_S = 60",
+        "reg-trend",
+        "seriesFor",
+        "drawSpark",
+        "getContext",
+        "state.history.clear",
+    ):
+        assert fragment in js, fragment
+
+
 def test_registers_page_has_edit_warning() -> None:
     """Плашка про перезапись при inline-редактировании CL/HR (TASK-713)."""
     with _client() as client:
