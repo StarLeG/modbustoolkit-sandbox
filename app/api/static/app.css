@@ -312,7 +312,10 @@ table.values td select{width:7rem;}
 /* Фиксированные крайние колонки: правка значения не меняет ширину столбцов. */
 table.reg-map{table-layout:fixed;}
 table.reg-map th:first-child,table.reg-map td:first-child{width:7rem;}
+table.reg-map th:nth-child(2),table.reg-map td:nth-child(2){width:9.5rem;}
 table.reg-map th:last-child,table.reg-map td:last-child{width:5rem;}
+table.reg-map td select{width:100%;}
+table.reg-map td .reg-bits{color:var(--text-muted);}
 #chart-canvas{width:100%;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);}
 
 /* ---------- часовые пояса ---------- */
