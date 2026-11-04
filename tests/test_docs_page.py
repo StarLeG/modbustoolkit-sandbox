@@ -10,6 +10,13 @@ from dataclasses import replace
 from fastapi.testclient import TestClient
 
 from app.api.app import create_app
+from app.api.pages import (
+    AUTHOR_URL,
+    ELECTROMAN_URL,
+    OPCUA_SANDBOX_URL,
+    PRODUCT_URL,
+    SUPPORT_URL,
+)
 from app.api.services import build_services
 from app.modbus.config import Config
 
@@ -209,6 +216,35 @@ def test_footer_links_to_github() -> None:
             html = client.get(path).text
             assert 'href="https://github.com/StarLeG/modbustoolkit-sandbox"' in html, path
             assert "Исходный код на GitHub" in html, path
+
+
+def test_footer_has_ecosystem_groups() -> None:
+    """Футер в стиле экосистемы Electroman: 4 группы ссылок (как на opcua-sendbox)."""
+    with _client() as client:
+        html = client.get("/").text
+    for fragment in (
+        'class="foot-top"',
+        'class="foot-grid"',
+        "<span class=\"eyebrow\">ModbusToolkit</span>",
+        "Экосистема Electroman",
+        "<span class=\"eyebrow\">Поддержка</span>",
+        "Modbus Sandbox · этот сервер",
+    ):
+        assert fragment in html, fragment
+    assert "Донаты идут на испытательный стенд" not in html  # строка заменена автором
+
+
+def test_footer_links_ecosystem_and_author() -> None:
+    """Ссылки футера: соседние сервисы, поддержка и автор (opcua-sendbox)."""
+    with _client() as client:
+        html = client.get("/").text
+    for url in (OPCUA_SANDBOX_URL, PRODUCT_URL, ELECTROMAN_URL, SUPPORT_URL, AUTHOR_URL):
+        assert f'href="{url}"' in html, url
+    assert "Олег Старинский" in html
+    with _client() as client:
+        html = client.get("/?lang=en").text
+    assert "Electroman ecosystem" in html
+    assert "Author: <a" in html
 
 
 def test_examples_js_copies_to_clipboard() -> None:
