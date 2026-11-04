@@ -43,7 +43,12 @@ def test_journal_lists_events_in_order() -> None:
     assert first["source"] == "web"
     assert first["ip"] is not None
     assert isinstance(first["timestamp"], float)
-    assert second["value"] == {"kind": "counter", "params": {"step": 1}, "locked": False}
+    assert second["value"] == {
+        "kind": "counter",
+        "params": {"step": 1},
+        "locked": False,
+        "dtype": None,  # явный тип не задан (TASK-717)
+    }
 
 
 def test_journal_limit_returns_last_entries() -> None:

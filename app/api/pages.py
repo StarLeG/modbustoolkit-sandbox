@@ -1225,29 +1225,37 @@ _REG_NOTE_RU = (
     "Значения обновляются в реальном времени, без перезагрузки страницы, и "
     "общие для всех подключений. Запись любого пользователя сразу видна "
     "остальным и заменяет прежнее значение. Таблица показывает 10 регистров; "
-    "переход — по начальному адресу или номеру страницы (Enter). Формат "
-    "значения выбирается в каждой строке: uint16/int16/HEX16 либо 32-битные "
-    "uint32/int32/float32 с порядком слов ABCD/CDAB/BADC/DCBA (и HEX32) — "
-    "32-битный формат объединяет регистры N и N+1 одной строкой (следующий "
-    "адрес в таблице не показывается), 16-битный показывает слово регистра N. "
-    "Выбор формата запоминается в браузере. Колонка «Тег» называет регистр: "
-    "имя поведения slave 1..9 либо метрику времени slave 10. Колонка "
-    "«Тренд, 60 с» рисует график значения строки за последнюю минуту в её "
-    "формате."
+    "переход — по начальному адресу или номеру страницы (Enter). Тип значения "
+    "строки — колонка «Тип»: uint16/int16 либо 32-битные uint32/int32/float32 "
+    "(с порядком слов слейва). 32-битный тип объединяет регистры N и N+1 "
+    "одной строкой (следующий адрес в таблице не показывается), 16-битный "
+    "показывает слово регистра N. Тип задаётся в настройках поведения («⚙») "
+    "и определяет математику генератора: float32 даёт дробные значения, "
+    "uint32/int32/uint16/int16 — целые в диапазоне типа. Колонка «Тег» "
+    "называет регистр: имя поведения slave 1..9 либо метрику времени slave 10. "
+    "Колонка «Поведение» выбирает генератор регистра (slave 1..9): выбор "
+    "сразу применяется, «⚙» открывает параметры, тип значения и блокировку "
+    "внешних записей — поведения общие для всех пользователей; у slave 10 "
+    "поведений нет. Колонка «Тренд, 60 с» рисует график значения строки за "
+    "последнюю минуту в её типе."
 )
 _REG_NOTE_EN = (
     "Values update in real time, no page reload needed, and are shared "
     "across all connections. Any user write is immediately visible to "
     "everyone else and replaces the previous value. The table shows 10 "
-    "registers; jump by start address or page number (Enter). The value "
-    "format is chosen per row: uint16/int16/HEX16 or 32-bit "
-    "uint32/int32/float32 with ABCD/CDAB/BADC/DCBA word order (and HEX32) — "
-    "a 32-bit format spans registers N and N+1 in one row (the next address is "
-    "not shown in the table), a 16-bit one shows the word of register N. "
-    "The format choice is remembered in the browser. The \"Tag\" column names "
-    "the register: the behavior name for slave 1..9 or the time metric for "
-    "slave 10. The \"Trend, 60 s\" column plots the row value over the last "
-    "minute in its format."
+    "registers; jump by start address or page number (Enter). The row value "
+    "type is the \"Type\" column: uint16/int16 or 32-bit uint32/int32/float32 "
+    "(with the slave's word order). A 32-bit type spans registers N and N+1 in "
+    "one row (the next address is not shown in the table), a 16-bit one shows "
+    "the word of register N. The type is chosen in the behavior settings (gear) "
+    "and drives the generator math: float32 gives fractional values, "
+    "uint32/int32/uint16/int16 give integers within the type range. The \"Tag\" "
+    "column names the register: the behavior name for slave 1..9 or the time "
+    "metric for slave 10. The \"Behavior\" column picks the register generator "
+    "(slave 1..9): the choice applies immediately, the gear opens its "
+    "parameters, the value type and the external-write lock - behaviors are "
+    "shared across all users; slave 10 has no behaviors. The \"Trend, 60 s\" "
+    "column plots the row value over the last minute in its type."
 )
 _REG_EDIT_RU = (
     "Редактирование CL/HR доступно прямо в таблице (клик по значению). "
@@ -1289,7 +1297,8 @@ def _registers_body(lang: Lang) -> str:
         '<table class="values reg-map">\n'
         f"  <thead><tr><th>{t(lang, 'Адрес', 'Address')}</th>"
         f"<th>{t(lang, 'Тег', 'Tag')}</th>"
-        f"<th>{t(lang, 'Формат', 'Format')}</th>"
+        f"<th>{t(lang, 'Поведение', 'Behavior')}</th>"
+        f"<th>{t(lang, 'Тип', 'Type')}</th>"
         f"<th>{t(lang, 'Значение', 'Value')}</th>"
         f"<th>{t(lang, 'Тренд, 60 с', 'Trend, 60 s')}</th><th></th></tr></thead>\n"
         '  <tbody id="reg-body"></tbody>\n'
@@ -1339,15 +1348,21 @@ def _registers_body(lang: Lang) -> str:
 
 _BH_NOTE_RU = (
     "Поведение задаёт, как значение регистра или бита меняется во времени "
-    "(счётчик, пила, шум и так далее). Привязки общие для всех пользователей, "
-    "любое изменение сразу действует для остальных. Slave 10 поведений не "
-    "имеет, его IR вычисляются (часовые пояса и Unix timestamp)."
+    "(счётчик, пила, шум и так далее). Тип значения для hr/ir выбирается там "
+    "же: uint16/int16 — один регистр, 32-битные uint32/int32/float32 — пара "
+    "регистров N, N+1 (адрес N+1 скрыт в карте регистров). Привязки общие для "
+    "всех пользователей, любое изменение сразу действует для остальных. "
+    "Slave 10 поведений не имеет, его IR вычисляются (часовые пояса и Unix "
+    "timestamp)."
 )
 _BH_NOTE_EN = (
     "A behavior drives how a register or bit value changes over time (counter, "
-    "sawtooth, noise and so on). Bindings are shared across all users, any "
-    "change immediately applies to everyone. Slave 10 has no behaviors; its "
-    "IR are computed (time zones and the Unix timestamp)."
+    "sawtooth, noise and so on). The value type for hr/ir is chosen right "
+    "there: uint16/int16 span one register, 32-bit uint32/int32/float32 span "
+    "the register pair N, N+1 (address N+1 is hidden in the register map). "
+    "Bindings are shared across all users, any change immediately applies to "
+    "everyone. Slave 10 has no behaviors; its IR are computed (time zones and "
+    "the Unix timestamp)."
 )
 _BH_PRESETS_NOTE_RU = (
     "Быстрая настройка формы ниже: заполняет поведение и параметры. Пресеты "
@@ -1418,6 +1433,7 @@ def _behaviors_body(lang: Lang) -> str:
         "</p>\n"
         '<div class="form-row">\n'
         f'  <label>{t(lang, "Поведение", "Behavior")} <select id="bh-kind"></select></label>\n'
+        f'  <label>{t(lang, "Тип", "Type")} <select id="bh-dtype"></select></label>\n'
         f'  <label class="check"><input id="bh-locked" type="checkbox"> '
         f"{t(lang, 'Заблокировать (locked: внешние записи игнорируются)', 'Lock (locked: external writes are ignored)')}</label>\n"
         "</div>\n"
@@ -1436,7 +1452,7 @@ def _behaviors_body(lang: Lang) -> str:
         '<table class="values">\n'
         "  <thead><tr><th>Unit ID</th>"
         f"<th>{t(lang, 'Область', 'Area')}</th><th>{t(lang, 'Адрес', 'Address')}</th>"
-        f"<th>{t(lang, 'Поведение', 'Behavior')}</th>"
+        f"<th>{t(lang, 'Поведение', 'Behavior')}</th><th>{t(lang, 'Тип', 'Type')}</th>"
         f"<th>{t(lang, 'Параметры', 'Params')}</th><th>Locked</th></tr></thead>\n"
         '  <tbody id="bh-list"></tbody>\n'
         "</table>\n"

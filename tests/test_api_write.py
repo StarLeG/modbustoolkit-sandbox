@@ -83,6 +83,56 @@ def test_write_hr_32bit_encodes_registers() -> None:
     )
 
 
+# --- запись по типу значения и геометрия пар (TASK-717) ------------------------------------
+
+
+def test_write_hr_pair_address_rejected() -> None:
+    """Младший регистр пары N, N+1 скрыт: запись идёт по адресу N (TASK-717)."""
+    services = build_services(Config())
+    services.registry.set(1, "hr", 5, Behavior("constant", {"value": 0}, dtype="float32"))
+    with _client(services) as client:
+        response = client.post(
+            "/api/modbus/write",
+            json={"slave": 1, "area": "hr", "address": 6, "value": 1},
+        )
+    assert response.status_code == 400
+    assert "младший регистр пары" in response.json()["detail"]
+    assert "запись идёт по адресу 5" in response.json()["detail"]
+    assert services.maps[1].get_registers("hr", 6, 1) == [0]  # не записано
+
+
+def test_write_hr_float32_keeps_fraction() -> None:
+    """Запись в привязку с типом float32: дробное значение без округления, пара регистров."""
+    services = build_services(Config())
+    services.registry.set(1, "hr", 5, Behavior("constant", {"value": 0}, dtype="float32"))
+    with _client(services) as client:
+        response = client.post(
+            "/api/modbus/write",
+            json={"slave": 1, "area": "hr", "address": 5, "value": 841.37},
+        )
+    assert response.status_code == 200
+    assert response.json()["value"] == 841.37
+    assert services.maps[1].get_registers("hr", 5, 2) == encode(
+        841.37, RegisterFormat.FLOAT_ABCD
+    )
+
+
+def test_write_hr_int16_clamps_and_signs() -> None:
+    """Запись в привязку с типом int16: clamp по знаковому диапазону (TASK-717)."""
+    services = build_services(Config())
+    services.registry.set(1, "hr", 5, Behavior("constant", {"value": 0}, dtype="int16"))
+    with _client(services) as client:
+        overflow = client.post(
+            "/api/modbus/write", json={"slave": 1, "area": "hr", "address": 5, "value": 40000}
+        )
+        negative = client.post(
+            "/api/modbus/write", json={"slave": 1, "area": "hr", "address": 5, "value": -5}
+        )
+    assert overflow.json()["value"] == 32767  # clamp INT16 сверху
+    assert negative.json()["value"] == -5
+    assert services.maps[1].get_registers("hr", 5, 1) == encode(-5, RegisterFormat.INT16)
+
+
 def test_write_cl_bool() -> None:
     services = build_services(Config())
     with _client(services) as client:

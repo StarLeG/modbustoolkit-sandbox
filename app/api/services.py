@@ -50,7 +50,7 @@ def build_services(config: Config | None = None) -> AppServices:
     write_limiter = WriteRateLimiter(cfg.WEB_MAX_WRITE_PER_MIN_PER_IP)
     injections = InjectionRegistry(max_ttl_s=cfg.INJECTION_MAX_TTL_S)
     metrics = ServerMetrics()
-    ws_bus = WebStateBus(maps, state_hz=cfg.WS_STATE_HZ)
+    ws_bus = WebStateBus(maps, registry=registry, state_hz=cfg.WS_STATE_HZ)
     journal.subscribe(ws_bus.publish_entry)  # события журнала → /ws/events (TASK-404)
     return AppServices(
         config=cfg,

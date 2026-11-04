@@ -89,15 +89,16 @@ def test_registers_js_served() -> None:
     assert "/api/modbus/state" in response.text
 
 
-def test_registers_page_has_format_column() -> None:
-    """Формат значения — по строке таблицы, глобального селекта больше нет."""
+def test_registers_page_has_type_column() -> None:
+    """Колонка «Тип» — только отображение; тип задаётся в настройках поведения (TASK-717)."""
     with _client() as client:
         response = client.get("/registers")
     html = response.text
-    assert 'id="reg-format"' not in html
-    assert "Формат" in html  # колонка таблицы
+    assert 'id="reg-format"' not in html  # глобального селекта форматов нет
+    assert "<th>Тип</th>" in html  # колонка таблицы — отображение без выбора
     assert "uint32/int32/float32" in html  # подпись про 32-битные пары N, N+1
-    assert "не показывается" in html  # поглощённый парой адрес убран из таблицы
+    assert "не показывается" in html  # младший регистр пары убран из таблицы
+    assert "Тип задаётся в настройках поведения" in html  # тип выбирается в «⚙»
 
 
 def test_registers_js_pagination() -> None:
@@ -116,50 +117,85 @@ def test_registers_js_pagination() -> None:
         assert fragment in js, fragment
 
 
-def test_registers_js_formats_values() -> None:
-    """Форматы строки: uint16/int16/HEX16 и 32-битные uint32/int32/float32/HEX32."""
+def test_registers_js_values_by_type() -> None:
+    """Значения форматируются и парсятся по типу строки; клиентского кодека больше нет (TASK-717)."""
     with _client() as client:
         response = client.get("/static/registers.js")
     js = response.text
     for fragment in (
-        "floatToBits",
-        "bitsToFloat",
-        "toSigned",
-        "wordsToBits",
-        "bitsToWords",
-        "uint32_abcd",
-        "float32_dcba",
-        "hex32",
+        "rowType",
+        "typeWidth",
+        "typeLabel",
+        "toPrecision",  # float32: 841.3699951171875 → 841.37
+        "parseValue",
+        "DTYPE_WIDTH",
+        "dtypesForFmt",
+    ):
+        assert fragment in js, fragment
+    assert "bitsToWords" not in js  # кодек форматов живёт в backend
+    assert "modbus-reg-formats" not in js
+
+
+def test_behavior_form_js_dtype_helpers() -> None:
+    """Схема типов значения — общая с формой поведений (behavior-form.js, TASK-717)."""
+    with _client() as client:
+        response = client.get("/static/behavior-form.js")
+    js = response.text
+    for fragment in (
+        "VALUE_DTYPES",
+        "DTYPE_WIDTH",
+        "dtypesForFmt",
+        '"uint16"',
+        '"float32"',
     ):
         assert fragment in js, fragment
 
 
-def test_registers_js_wire_perm_matches_codec() -> None:
-    """WIRE_PERM в JS — зеркало перестановок app/modbus/codec.py (ABCD/CDAB/BADC/DCBA)."""
+def test_registers_js_pair_geometry() -> None:
+    """Ширина типа задаёт геометрию: 32-битный тип объединяет регистры N и N+1 (TASK-717)."""
     with _client() as client:
         response = client.get("/static/registers.js")
     js = response.text
     for fragment in (
-        "ABCD: [0, 1, 2, 3]",
-        "CDAB: [2, 3, 0, 1]",
-        "BADC: [1, 0, 3, 2]",
-        "DCBA: [3, 2, 1, 0]",
-    ):
-        assert fragment in js, fragment
-
-
-def test_registers_js_pair_span() -> None:
-    """32-битный формат строки объединяет регистры N и N+1, выбор хранится в браузере."""
-    with _client() as client:
-        response = client.get("/static/registers.js")
-    js = response.text
-    for fragment in (
-        "pairWords",
-        "wireAt",
+        "pairOf",
         "pairAvailable",
-        "modbus-reg-formats",
-        "slotOf",
+        "typeWidth",
         "visibleRows",
+    ):
+        assert fragment in js, fragment
+
+
+def test_registers_js_pair_hint() -> None:
+    """Подсказки пары N, N+1: тултип значения и пояснение в настройках поведения.
+
+    Младший регистр пары скрыт и настраивается только через адрес N - без
+    подсказки его отсутствие в таблице выглядит как косяк.
+    """
+    with _client() as client:
+        response = client.get("/static/registers.js")
+    js = response.text
+    for fragment in (
+        "pairOf",
+        "pairHint",
+        "valueTitle",
+        "Пара регистров {a} и {b}",
+        "cellValue.title = valueTitle(address)",
+        "cell.title = valueTitle(address)",
+        "поведение настраивает регистр {a}",
+        "младший регистр пары",
+    ):
+        assert fragment in js, fragment
+
+
+def test_registers_js_dtype_in_behavior_editor() -> None:
+    """«⚙» строки настраивает тип значения, PUT шлёт dtype (TASK-717)."""
+    with _client() as client:
+        response = client.get("/static/registers.js")
+    js = response.text
+    for fragment in (
+        "reg-bh-dtype-",
+        "dtype: dtype || null",
+        'window.t("Тип")',
     ):
         assert fragment in js, fragment
 
@@ -181,10 +217,53 @@ def test_registers_js_tags() -> None:
     for fragment in (
         "tagText",
         "slave10Tag",
-        "KIND_RU",
+        "kindLabel",  # имена kind — из общей схемы behavior-form.js
         "/api/modbus/behaviors",
         "Unix timestamp",
         "Смещение UTC",
+    ):
+        assert fragment in js, fragment
+
+
+def test_registers_page_has_behavior_column() -> None:
+    """Колонка «Поведение» — выбор kind и настройки в карте регистров (TASK-716)."""
+    with _client() as client:
+        response = client.get("/registers")
+    html = response.text
+    assert "<th>Поведение</th>" in html  # шапка таблицы, после тега
+    assert "общие для всех пользователей" in html  # поведения общие (подпись)
+
+
+def test_behavior_form_js_served() -> None:
+    """Общая схема поведений (kind/params) — модуль /static/behavior-form.js (TASK-716)."""
+    with _client() as client:
+        response = client.get("/static/behavior-form.js")
+    assert response.status_code == 200
+    js = response.text
+    for fragment in (
+        "PARAM_SPECS",
+        "NUMERIC_KINDS",
+        "DISCRETE_KINDS",
+        "renderParams",
+        "collectParams",
+        "defaultParams",
+    ):
+        assert fragment in js, fragment
+
+
+def test_registers_js_behavior_select_and_settings() -> None:
+    """Селект поведения строки ставит kind, «⚙» открывает параметры (TASK-716)."""
+    with _client() as client:
+        response = client.get("/static/registers.js")
+    js = response.text
+    for fragment in (
+        'from "./behavior-form.js"',
+        "buildBehaviorSelect",
+        "buildBehaviorEditor",
+        '"/api/modbus/behaviors/" + state.slave + "/" + state.area + "/" + address',
+        "/api/modbus/behaviors/batch",
+        "remove: true",
+        "Настроить поведение",
     ):
         assert fragment in js, fragment
 

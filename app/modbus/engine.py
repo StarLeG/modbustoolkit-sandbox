@@ -23,7 +23,13 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Self
 
-from app.modbus.behavior import Behavior, BehaviorRegistry, Binding
+from app.modbus.behavior import (
+    Behavior,
+    BehaviorRegistry,
+    Binding,
+    pair_owner,
+    wire_format_for,
+)
 from app.modbus.codec import clamp_value, decode, encode
 from app.modbus.generators import ConstantGenerator, ValueGenerator, create_generator
 from app.modbus.journal import Journal, JournalEntry
@@ -76,8 +82,13 @@ class BehaviorEngine:
         smap = self._maps[slave]
         if area in _BIT_AREAS:
             return 1 if smap.get_bits(area, address, 1)[0] else 0
-        regs = smap.get_registers(area, address, smap.spec.fmt.registers_per_value)
-        return decode(regs, smap.spec.fmt)
+        owner = pair_owner(self._registry, slave, area, address)
+        if owner is not None:
+            address = owner  # младший регистр пары: значение живёт на адресе N
+        config = self._registry.get(slave, area, address)
+        fmt = wire_format_for(config, slave) if config is not None else smap.spec.fmt
+        regs = smap.get_registers(area, address, fmt.registers_per_value)
+        return decode(regs, fmt)
 
     def read_bit(self, binding: Binding) -> bool:
         slave, area, address = binding
@@ -113,7 +124,9 @@ class BehaviorEngine:
                 address,
             )
             self._journal_failure(slave, area, address)
-            fallback = Behavior("constant", {"value": 0}, locked=behavior.locked)
+            fallback = Behavior(
+                "constant", {"value": 0}, locked=behavior.locked, dtype=behavior.dtype
+            )
             self._registry.set(slave, area, address, fallback)
             generator = ConstantGenerator(False if area in _BIT_AREAS else 0)
             return _Slot(config=fallback, generator=generator, created_at=now)
@@ -132,6 +145,9 @@ class BehaviorEngine:
         self.ticks += 1
 
     def _apply(self, binding: Binding, slot: _Slot, now: float) -> None:
+        slave, area, address = binding
+        if pair_owner(self._registry, slave, area, address) is not None:
+            return  # младший регистр пары N, N+1: значением управляет привязка N
         if slot.generator.is_static and slot.last is not None:
             return  # constant уже применён; чужие записи не перетираем
         try:
@@ -163,7 +179,9 @@ class BehaviorEngine:
             address,
         )
         self._journal_failure(slave, area, address)
-        fallback = Behavior("constant", {"value": 0}, locked=slot.config.locked)
+        fallback = Behavior(
+            "constant", {"value": 0}, locked=slot.config.locked, dtype=slot.config.dtype
+        )
         self._registry.set(slave, area, address, fallback)
         slot.config = fallback
         slot.generator = ConstantGenerator(False if area in _BIT_AREAS else 0)
@@ -178,9 +196,10 @@ class BehaviorEngine:
                 smap.set_bits(area, address, [new_bit])
                 slot.last = new_bit
             return
-        new_value = clamp_value(value, smap.spec.fmt)
+        fmt = wire_format_for(slot.config, slave)  # тип значения × порядок слов (TASK-717)
+        new_value = clamp_value(value, fmt)
         if slot.last != new_value:
-            smap.set_registers(area, address, encode(new_value, smap.spec.fmt))
+            smap.set_registers(area, address, encode(new_value, fmt))
             slot.last = new_value
 
     def start(self) -> None:

@@ -5,134 +5,17 @@
 // /api/modbus/behaviors/{slave}/{area}/{address}; диапазон адресов
 // («Применить к диапазону» / «Сбросить») — POST /api/modbus/behaviors/batch;
 // список переопределений — GET /api/modbus/behaviors?only_overrides=true.
+// Схема kind/params — общая с картой регистров (behavior-form.js, TASK-716).
 
-const NUMERIC_KINDS = [
-  "constant",
-  "counter",
-  "sawtooth",
-  "triangle",
-  "meander",
-  "sine",
-  "random_uniform",
-  "random_walk",
-  "ramp_oneshot",
-  "countdown",
-  "step",
-  "follow",
-];
-
-const DISCRETE_KINDS = ["constant", "toggle", "pwm", "random_bit", "counter_bits", "follow_bit"];
-
-const KIND_LABELS = {
-  constant: window.t("константа"),
-  counter: window.t("счётчик"),
-  sawtooth: window.t("пила"),
-  triangle: window.t("треугольник"),
-  meander: window.t("меандр"),
-  sine: window.t("синус"),
-  random_uniform: window.t("равномерный шум"),
-  random_walk: window.t("блуждание"),
-  ramp_oneshot: window.t("переход (ramp)"),
-  countdown: window.t("обратный отсчёт"),
-  step: window.t("ступеньки"),
-  follow: window.t("копия регистра"),
-  toggle: window.t("переключение"),
-  pwm: window.t("ШИМ (скважность)"),
-  random_bit: window.t("случайный бит"),
-  counter_bits: window.t("биты счётчика секунд"),
-  follow_bit: window.t("копия бита"),
-};
-
-// Поля параметров kind'ов: name — имя параметра API, type — number/bool/text,
-// def — значение по умолчанию (как в generators.py), optional — пустое поле
-// не отправляется (сервер берёт дефолт; нужно для counter_bits: bit = address−1).
-const PARAM_SPECS = {
-  constant: [{ name: "value", label: window.t("Значение"), type: "number", def: 0 }],
-  counter: [
-    { name: "start", label: window.t("Старт"), type: "number", def: 0 },
-    { name: "step", label: window.t("Шаг"), type: "number", def: 1 },
-    { name: "min", label: window.t("Минимум"), type: "number", def: 0 },
-    { name: "max", label: window.t("Максимум"), type: "number", def: 4294967295 },
-    { name: "wrap", label: window.t("Цикл (wrap)"), type: "bool", def: true },
-    { name: "interval_s", label: window.t("Период шага, с"), type: "number", def: 1 },
-  ],
-  sawtooth: [
-    { name: "min", label: window.t("Минимум"), type: "number", def: 0 },
-    { name: "max", label: window.t("Максимум"), type: "number", def: 100 },
-    { name: "period_s", label: window.t("Период, с"), type: "number", def: 10 },
-    { name: "phase", label: window.t("Фаза (доля периода)"), type: "number", def: 0 },
-  ],
-  triangle: [
-    { name: "min", label: window.t("Минимум"), type: "number", def: 0 },
-    { name: "max", label: window.t("Максимум"), type: "number", def: 100 },
-    { name: "period_s", label: window.t("Период, с"), type: "number", def: 10 },
-    { name: "phase", label: window.t("Фаза (доля периода)"), type: "number", def: 0 },
-  ],
-  meander: [
-    { name: "min", label: window.t("Минимум"), type: "number", def: 0 },
-    { name: "max", label: window.t("Максимум"), type: "number", def: 100 },
-    { name: "period_s", label: window.t("Период, с"), type: "number", def: 10 },
-    { name: "duty", label: window.t("Скважность (от 0 до 1)"), type: "number", def: 0.5 },
-    { name: "phase", label: window.t("Фаза (доля периода)"), type: "number", def: 0 },
-  ],
-  sine: [
-    { name: "min", label: window.t("Минимум"), type: "number", def: 0 },
-    { name: "max", label: window.t("Максимум"), type: "number", def: 100 },
-    { name: "period_s", label: window.t("Период, с"), type: "number", def: 10 },
-    { name: "phase", label: window.t("Фаза (доля периода)"), type: "number", def: 0 },
-  ],
-  random_uniform: [
-    { name: "min", label: window.t("Минимум"), type: "number", def: 0 },
-    { name: "max", label: window.t("Максимум"), type: "number", def: 100 },
-  ],
-  random_walk: [
-    { name: "min", label: window.t("Минимум"), type: "number", def: 0 },
-    { name: "max", label: window.t("Максимум"), type: "number", def: 100 },
-    { name: "step", label: window.t("Шаг"), type: "number", def: 1 },
-    { name: "mean_reversion", label: window.t("Возврат к среднему (от 0 до 1)"), type: "number", def: 0 },
-  ],
-  ramp_oneshot: [
-    { name: "from", label: window.t("От"), type: "number", def: 0 },
-    { name: "to", label: window.t("До"), type: "number", def: 100 },
-    { name: "duration_s", label: window.t("Длительность, с"), type: "number", def: 10 },
-    {
-      name: "then",
-      label: window.t("Дальше (hold, loop или число)"),
-      type: "text",
-      def: "hold",
-    },
-  ],
-  countdown: [
-    { name: "start", label: window.t("Старт"), type: "number", def: 100 },
-    { name: "step", label: window.t("Шаг"), type: "number", def: 1 },
-    { name: "min", label: window.t("Минимум"), type: "number", def: 0 },
-    { name: "interval_s", label: window.t("Период шага, с"), type: "number", def: 1 },
-  ],
-  step: [
-    { name: "values", label: window.t("Значения через запятую"), type: "text", def: "0, 1" },
-    { name: "interval_s", label: window.t("Период шага, с"), type: "number", def: 1 },
-  ],
-  follow: [{ name: "source", label: window.t("Источник (вида «hr:15»)"), type: "text", def: "hr:15" }],
-  toggle: [{ name: "period_s", label: window.t("Период, с"), type: "number", def: 1 }],
-  pwm: [
-    { name: "period_s", label: window.t("Период, с"), type: "number", def: 1 },
-    { name: "duty", label: window.t("Скважность (от 0 до 1)"), type: "number", def: 0.5 },
-  ],
-  random_bit: [{ name: "p", label: window.t("Вероятность 1 (от 0 до 1)"), type: "number", def: 0.5 }],
-  counter_bits: [
-    {
-      name: "bit",
-      label: window.t("Номер бита (пусто - на единицу меньше адреса)"),
-      type: "number",
-      def: null,
-      optional: true,
-    },
-  ],
-  follow_bit: [
-    { name: "source", label: window.t("Источник (вида «hr:15»)"), type: "text", def: "hr:15" },
-    { name: "bit", label: window.t("Номер бита"), type: "number", def: 0 },
-  ],
-};
+import {
+  collectParams as collectFormParams,
+  DTYPE_WIDTH,
+  dtypesForFmt,
+  fillParams,
+  kindLabel,
+  kindsForArea,
+  renderParams as renderFormParams,
+} from "./behavior-form.js";
 
 function el(id) {
   return document.getElementById(id);
@@ -162,17 +45,8 @@ function applyPreset(name) {
   }
   el("bh-kind").value = preset.kind;
   renderParams();
-  for (const [key, value] of Object.entries(preset.params)) {
-    const input = el("bh-param-" + key);
-    if (!input) continue;
-    if (input.type === "checkbox") input.checked = Boolean(value);
-    else input.value = String(value);
-  }
+  fillParams(el("bh-params"), preset.params);
   el("bh-status").textContent = window.t("Пресет «{name}» загружен в форму - нажмите «Установить».", { name: name });
-}
-
-function kindsForArea(area) {
-  return area === "hr" || area === "ir" ? NUMERIC_KINDS : DISCRETE_KINDS;
 }
 
 function renderKinds() {
@@ -182,102 +56,62 @@ function renderKinds() {
   for (const kind of kindsForArea(el("bh-area").value)) {
     const option = document.createElement("option");
     option.value = kind;
-    option.textContent = kind + " - " + KIND_LABELS[kind];
+    option.textContent = kind + " - " + kindLabel(kind);
     select.appendChild(option);
   }
   if (kindsForArea(el("bh-area").value).includes(previous)) select.value = previous;
   renderParams();
+  renderDtypes();
 }
 
+// Селект типа значения (TASK-717): типы по сетке слейва (16-битная — все,
+// 32-битная — только 32-битные); у cl/di типа нет — селект пуст и заблокирован
+function renderDtypes() {
+  const select = el("bh-dtype");
+  const previous = select.value;
+  const area = el("bh-area").value;
+  select.textContent = "";
+  if (area !== "hr" && area !== "ir") {
+    const none = document.createElement("option");
+    none.value = "";
+    none.textContent = "—";
+    select.appendChild(none);
+    select.value = "";
+    select.disabled = true;
+    return;
+  }
+  select.disabled = false;
+  const spec = window.REGISTER_MAP[String(el("bh-slave").value)];
+  for (const dtype of dtypesForFmt(spec ? spec.fmt : "uint16")) {
+    const option = document.createElement("option");
+    option.value = dtype;
+    option.textContent = dtype;
+    select.appendChild(option);
+  }
+  if ([].some.call(select.options, function (option) { return option.value === previous; })) {
+    select.value = previous;
+  }
+}
+
+// Выбранный тип формы: null для cl/di (сервер принимает dtype только у hr/ir)
+function selectedDtype() {
+  return el("bh-dtype").value || null;
+}
+
+// Ширина выбранного типа в регистрах: 32-битный — пара N, N+1
+function selectedWidth() {
+  return DTYPE_WIDTH[selectedDtype()] || 1;
+}
+
+// Поля параметров выбранного kind'а в контейнер #bh-params (общая схема —
+// behavior-form.js)
 function renderParams() {
-  const container = el("bh-params");
-  container.textContent = "";
-  const specs = PARAM_SPECS[el("bh-kind").value] || [];
-  for (const spec of specs) {
-    const label = document.createElement("label");
-    label.className = "bh-param";
-    label.textContent = spec.label + " ";
-    const input = document.createElement("input");
-    input.id = "bh-param-" + spec.name;
-    if (spec.type === "bool") {
-      input.type = "checkbox";
-      input.checked = Boolean(spec.def);
-    } else if (spec.type === "number") {
-      input.type = "number";
-      input.step = "any";
-      if (spec.def !== null && spec.def !== undefined) input.value = String(spec.def);
-    } else {
-      input.type = "text";
-      if (spec.def !== null && spec.def !== undefined) input.value = String(spec.def);
-    }
-    label.appendChild(input);
-    container.appendChild(label);
-  }
+  renderFormParams(el("bh-params"), el("bh-kind").value);
 }
 
-// Собрать params из формы: bool → checkbox, number → Number, text → строка
-// (step.values — список чисел из строки «0, 1»); пустое optional-поле не
-// отправляется — сервер возьмёт дефолт.
+// Собрать params из формы (типизация и optional-поля — в behavior-form.js)
 function collectParams() {
-  const params = {};
-  const specs = PARAM_SPECS[el("bh-kind").value] || [];
-  for (const spec of specs) {
-    const input = el("bh-param-" + spec.name);
-    if (!input) continue;
-    if (spec.type === "bool") {
-      params[spec.name] = input.checked;
-      continue;
-    }
-    const raw = input.value.trim();
-    if (raw === "") {
-      if (spec.optional) continue;
-      showError(window.t("заполните параметр «{label}»", { label: spec.label }));
-      return null;
-    }
-    if (spec.type === "number") {
-      const value = Number(raw);
-      if (Number.isNaN(value)) {
-        showError(window.t("параметр «{label}» должен быть числом", { label: spec.label }));
-        return null;
-      }
-      params[spec.name] = value;
-      continue;
-    }
-    if (spec.name === "values") {
-      const parts = raw.split(",").map((part) => part.trim()).filter(Boolean);
-      const values = [];
-      for (const part of parts) {
-        const value = Number(part);
-        if (Number.isNaN(value)) {
-          showError(window.t("параметр «{label}»: «{part}» - не число", { label: spec.label, part: part }));
-          return null;
-        }
-        values.push(value);
-      }
-      if (values.length === 0) {
-        showError(window.t("параметр «{label}»: нужен хотя бы один элемент", { label: spec.label }));
-        return null;
-      }
-      params[spec.name] = values;
-      continue;
-    }
-    if (spec.name === "then") {
-      // "hold" / "loop" — строки, иначе число (RampOneshotGenerator).
-      if (raw === "hold" || raw === "loop") {
-        params[spec.name] = raw;
-        continue;
-      }
-      const value = Number(raw);
-      if (Number.isNaN(value)) {
-        showError(window.t("параметр «{label}»: hold, loop или число", { label: spec.label }));
-        return null;
-      }
-      params[spec.name] = value;
-      continue;
-    }
-    params[spec.name] = raw;
-  }
-  return params;
+  return collectFormParams(el("bh-params"), el("bh-kind").value, showError);
 }
 
 function showError(text) {
@@ -300,7 +134,7 @@ async function apply() {
       {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kind: kind, params: params, locked: locked }),
+        body: JSON.stringify({ kind: kind, params: params, locked: locked, dtype: selectedDtype() }),
       }
     );
     const body = await response.json();
@@ -318,15 +152,24 @@ async function apply() {
   }
 }
 
-// Адреса сетки значений области в диапазоне from..to (TASK-723): у 32-битных
-// форматов значения идут с шагом 2 (1, 3, …, 1023) — берём только существующие.
+// Адреса сетки значений области в диапазоне from..to (TASK-723, 717): у
+// 32-битных форматов значения идут с шагом 2 (1, 3, …, 1023) — берём только
+// существующие. Ширина выбранного типа задаёт геометрию: 32-битный тип на
+// slave 1 занимает пару N, N+1, поэтому в диапазон идут только головы пар
+// (младшие регистры покрываются предыдущей головой).
 function rangeAddresses(area, from, to) {
   const spec = window.REGISTER_MAP[String(el("bh-slave").value)];
   const ranges = (spec && spec.areas[area]) || [];
+  const width = selectedWidth();
   const addresses = [];
+  let coveredTo = 0; // последний регистр, занятый предыдущей головой пары
   for (const [start, stop, step] of ranges) {
     for (let address = start; address <= stop; address += step) {
-      if (address >= from && address <= to) addresses.push(address);
+      if (address < from || address > to) continue;
+      if (address <= coveredTo) continue; // младший регистр пары уже занят
+      if (address + width - 1 > stop + (step - 1)) continue; // пара не влезает в карту
+      addresses.push(address);
+      coveredTo = address + width - 1;
     }
   }
   return addresses;
@@ -371,6 +214,7 @@ async function applyRange() {
       kind: kind,
       params: params,
       locked: locked,
+      dtype: selectedDtype(),
     };
   });
   status.textContent = window.t("Применение к {count} адресам…", { count: items.length });
@@ -438,7 +282,7 @@ async function refreshList() {
     if (body.items.length === 0) {
       const row = document.createElement("tr");
       const cell = document.createElement("td");
-      cell.colSpan = 6;
+      cell.colSpan = 7;
       cell.textContent = window.t("Переопределений нет - все привязки по умолчанию.");
       row.appendChild(cell);
       list.appendChild(row);
@@ -451,6 +295,7 @@ async function refreshList() {
         item.area,
         String(item.address),
         item.kind,
+        item.dtype || "—", // эффективный тип: у cl/di типа нет
         JSON.stringify(item.params),
         item.locked ? window.t("да") : window.t("нет"),
       ];
@@ -468,6 +313,7 @@ async function refreshList() {
 
 function init() {
   el("bh-area").addEventListener("change", renderKinds);
+  el("bh-slave").addEventListener("change", renderDtypes); // сетка слейва меняет список типов
   el("bh-kind").addEventListener("change", renderParams);
   el("bh-apply").addEventListener("click", apply);
   el("bh-apply-range").addEventListener("click", applyRange);

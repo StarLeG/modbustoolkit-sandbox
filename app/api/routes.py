@@ -50,8 +50,13 @@ from app.modbus.behavior import (
     Behavior,
     Binding,
     check_binding,
+    check_dtype_for_area,
+    check_geometry,
     check_kind_for_area,
     default_behavior,
+    effective_dtype,
+    pair_owner,
+    wire_format_for,
 )
 from app.modbus.codec import clamp_value, decode, encode
 from app.modbus.injection import Injection
@@ -102,6 +107,7 @@ def _behavior_out(behavior: Behavior, binding: Binding) -> BehaviorOut:
         params=behavior.params,
         locked=behavior.locked,
         is_default=behavior is default_behavior(slave, area, address),
+        dtype=effective_dtype(behavior, slave) if area in ("hr", "ir") else None,
     )
 
 
@@ -190,7 +196,7 @@ def put_behavior(
     """
     ip = _ui_action_ip(request, services)
     try:
-        behavior = Behavior(body.kind, body.params, locked=body.locked)  # type: ignore[arg-type]
+        behavior = Behavior(body.kind, body.params, locked=body.locked, dtype=body.dtype)  # type: ignore[arg-type]
         services.registry.set(slave, area, address, behavior)
     except (ValueError, TypeError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -202,7 +208,12 @@ def put_behavior(
             slave=slave,
             area=area,
             address=address,
-            value={"kind": stored.kind, "params": stored.params, "locked": stored.locked},
+            value={
+                "kind": stored.kind,
+                "params": stored.params,
+                "locked": stored.locked,
+                "dtype": stored.dtype,
+            },
             source="web",
             ip=ip,
         )
@@ -228,7 +239,8 @@ def post_behaviors_batch(
 ) -> BatchResponse:
     """Пакетная установка/сброс поведений (TASK-303).
 
-    Атомарность: сперва валидируются все элементы (привязка, kind, область),
+    Атомарность: сперва валидируются все элементы (привязка, kind, область,
+    тип значения и геометрия пар N, N+1 с учётом друг друга, TASK-717),
     затем применяются все. Ошибка в любом элементе → 400, ничего не применяется.
     Пакет не больше `MAX_BATCH_ITEMS` (422); действие из UI лимитируется общим
     `WEB_MAX_WRITE_PER_MIN_PER_IP` (429, TASK-1004). `remove=True` сбрасывает
@@ -237,22 +249,32 @@ def post_behaviors_batch(
     """
     ip = _ui_action_ip(request, services)
     prepared: list[tuple[Binding, Behavior | None]] = []
+    planned: dict[Binding, Behavior | None] = {}
     for index, item in enumerate(body.items):
         binding: Binding = (item.slave, item.area, item.address)
         try:
+            check_binding(item.slave, item.area, item.address)
             if item.remove:
                 if item.kind is not None:
                     raise ValueError("remove=true не сочетается с kind")
-                check_binding(item.slave, item.area, item.address)
                 prepared.append((binding, None))
+                planned[binding] = None
             else:
                 if item.kind is None:
                     raise ValueError("kind обязателен (либо remove=true)")
-                behavior = Behavior(item.kind, item.params, locked=item.locked)  # type: ignore[arg-type]
-                check_binding(item.slave, item.area, item.address)
+                behavior = Behavior(item.kind, item.params, locked=item.locked, dtype=item.dtype)  # type: ignore[arg-type]
                 check_kind_for_area(behavior.kind, item.area)
+                check_dtype_for_area(behavior.dtype, item.slave, item.area)
                 prepared.append((binding, behavior))
+                planned[binding] = behavior
         except (ValueError, TypeError) as exc:
+            raise HTTPException(status_code=400, detail=f"элемент {index}: {exc}") from exc
+
+    # Геометрия пар N, N+1 (TASK-717): элементы пакета учитывают друг друга.
+    for index, (binding, new_behavior) in enumerate(prepared):
+        try:
+            check_geometry(services.registry, *binding, new_behavior, planned)
+        except ValueError as exc:
             raise HTTPException(status_code=400, detail=f"элемент {index}: {exc}") from exc
 
     applied = 0
@@ -265,11 +287,16 @@ def post_behaviors_batch(
             value: object = None
             removed += 1
         else:
-            services.registry.set(slave, area, address, new_behavior)
+            services.registry.set(slave, area, address, new_behavior, planned=planned)
             stored = services.registry.get(slave, area, address)
             assert stored is not None  # только что установлена
             action = "behavior_set"
-            value = {"kind": stored.kind, "params": stored.params, "locked": stored.locked}
+            value = {
+                "kind": stored.kind,
+                "params": stored.params,
+                "locked": stored.locked,
+                "dtype": stored.dtype,
+            }
             applied += 1
         services.journal.add(
             JournalEntry(
@@ -367,7 +394,7 @@ def get_state(
     return StateResponse(
         slave=slave,
         fmt=smap.spec.fmt,
-        areas={a: area_values(smap, a) for a in areas_to_read},
+        areas={a: area_values(smap, a, services.registry) for a in areas_to_read},
     )
 
 
@@ -422,8 +449,19 @@ def post_write(
     else:
         if isinstance(body.value, bool):
             raise HTTPException(status_code=400, detail="для hr ожидается число")
-        written = clamp_value(body.value, spec.fmt)
-        values = encode(written, spec.fmt)
+        owner = pair_owner(services.registry, body.slave, "hr", body.address)
+        if owner is not None:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"slave {body.slave}: hr {body.address} — младший регистр пары "
+                    f"{owner}, {owner + 1}; запись идёт по адресу {owner}"
+                ),
+            )
+        config = services.registry.get(body.slave, "hr", body.address)
+        fmt = wire_format_for(config, body.slave) if config is not None else spec.fmt
+        written = clamp_value(body.value, fmt)
+        values = encode(written, fmt)
     try:
         services.write_policy(body.slave, body.area, body.address, values, source="web", ip=ip)
     except ModbusMapError as exc:
@@ -467,7 +505,9 @@ def post_snapshot(services: ServicesDep) -> Snapshot:
     """
     slaves: dict[int, dict[Area, dict[str, int | float | bool]]] = {}
     for slave_id, smap in services.maps.items():
-        slaves[slave_id] = {a: area_values(smap, a) for a in AREAS if smap.spec.area_ranges(a)}
+        slaves[slave_id] = {
+            a: area_values(smap, a, services.registry) for a in AREAS if smap.spec.area_ranges(a)
+        }
     return Snapshot(slaves=slaves)
 
 
@@ -566,7 +606,9 @@ def post_restore(
     """Восстановить значения из снимка (TASK-307).
 
     Пишутся только hr/cl: ir/di генерируются движком (инвариант 2), их
-    значения в снимке игнорируются (`ignored`). Атомарно по валидации: любая
+    значения в снимке игнорируются (`ignored`), туда же попадают младшие
+    регистры пар N, N+1 (TASK-717: значением управляет привязка N). Значения hr
+    приводятся к типу значения привязки. Атомарно по валидации: любая
     ошибка формата/адреса → 400, ничего не пишется. Locked-привязки
     пропускаются (write_policy, ADR-003 п. 3) — `skipped_locked`. Действие из
     UI лимитируется общим `WEB_MAX_WRITE_PER_MIN_PER_IP` (429, TASK-1004).
@@ -600,6 +642,9 @@ def post_restore(
                         status_code=400,
                         detail=f"slave {slave}: {area} адрес {address} вне карты значений",
                     )
+                if area == "hr" and pair_owner(services.registry, slave, "hr", address) is not None:
+                    ignored += 1  # младший регистр пары N, N+1: значение живёт на адресе N
+                    continue
                 if area == "cl" and not isinstance(value, bool):
                     raise HTTPException(
                         status_code=400, detail=f"slave {slave}: cl {address} — ожидается bool"
@@ -613,13 +658,14 @@ def post_restore(
     restored = 0
     skipped_locked = 0
     for slave, area, address, value in prepared:
-        spec = SLAVE_SPECS[slave]
         if area == "cl":
             written: bool | int | float = bool(value)
             values_out: list[int] | list[bool] = [bool(value)]
         else:
-            written = clamp_value(value, spec.fmt)
-            values_out = encode(written, spec.fmt)
+            config = services.registry.get(slave, "hr", address)
+            fmt = wire_format_for(config, slave) if config is not None else SLAVE_SPECS[slave].fmt
+            written = clamp_value(value, fmt)
+            values_out = encode(written, fmt)
         try:
             services.write_policy(slave, area, address, values_out, source="web", ip=ip)
         except ModbusMapError:

@@ -131,6 +131,33 @@ def test_restore_normalizes_to_format() -> None:
     assert entry.value == 65535
 
 
+def test_restore_ignores_pair_shadow_address() -> None:
+    """Младший регистр пары N, N+1 в снимке игнорируется — значением владеет N (TASK-717)."""
+    services = build_services(Config())
+    services.registry.set(1, "hr", 5, Behavior("constant", {"value": 0}, dtype="float32"))
+    payload = {"slaves": {"1": {"hr": {"5": 841.37, "6": 999}}}}
+    with _client(services) as client:
+        response = client.post("/api/modbus/restore", json=payload)
+    assert response.status_code == 200
+    assert response.json() == {"restored": 1, "skipped_locked": 0, "ignored": 1}
+    assert services.maps[1].get_registers("hr", 5, 2) == encode(
+        841.37, RegisterFormat.FLOAT_ABCD
+    )
+
+
+def test_restore_writes_by_binding_dtype() -> None:
+    """Значения hr восстанавливаются по типу значения привязки (TASK-717)."""
+    services = build_services(Config())
+    services.registry.set(1, "hr", 5, Behavior("constant", {"value": 0}, dtype="int16"))
+    payload = {"slaves": {"1": {"hr": {"5": -5}}}}
+    with _client(services) as client:
+        response = client.post("/api/modbus/restore", json=payload)
+    assert response.json()["restored"] == 1
+    assert services.maps[1].get_registers("hr", 5, 1) == encode(-5, RegisterFormat.INT16)
+    entry = [e for e in services.journal.entries() if e.action == "restore"][-1]
+    assert entry.value == -5
+
+
 def test_restore_locked_skipped() -> None:
     services = build_services(Config())
     services.registry.set(1, "hr", 5, Behavior("constant", {"value": 0}, locked=True))

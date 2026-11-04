@@ -17,6 +17,7 @@ from typing import Any, Literal
 from starlette.websockets import WebSocket
 
 from app.api.state_view import state_payload
+from app.modbus.behavior import BehaviorRegistry
 from app.modbus.journal import JournalEntry
 from app.modbus.slave_map import SlaveMap
 from app.modbus.types import AREAS, SLAVE_SPECS, Area
@@ -102,6 +103,7 @@ class WebStateBus:
         self,
         maps: dict[int, SlaveMap],
         *,
+        registry: BehaviorRegistry | None = None,
         state_hz: float = 2.0,
         queue_size: int = WS_CLIENT_QUEUE,
         send_timeout_s: float = WS_SEND_TIMEOUT_S,
@@ -111,6 +113,7 @@ class WebStateBus:
         if queue_size <= 0:
             raise ValueError(f"queue_size должен быть > 0, получено: {queue_size}")
         self._maps = maps
+        self._registry = registry
         self._state_interval = 1.0 / state_hz
         self._queue_size = queue_size
         self._send_timeout_s = send_timeout_s
@@ -193,7 +196,9 @@ class WebStateBus:
         if client.subscription is None or client.dropped:
             return
         sub = client.subscription
-        payload = state_payload(self._maps, sub.slave, sub.areas, sub.addresses)
+        payload = state_payload(
+            self._maps, sub.slave, sub.areas, sub.addresses, registry=self._registry
+        )
         self._offer(client, {"type": "state", **payload})
 
     def _offer(self, client: WsClient, frame: dict[str, Any]) -> None:

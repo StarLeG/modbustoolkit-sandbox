@@ -1,11 +1,14 @@
 """Представление значений слейвов: сетка адресов (value-grid) и decode (TASK-305).
 
 Общее для REST (`GET /api/modbus/state`, снимки) и WS (`/ws/state`, ADR-005 п. 1).
+Декод hr/ir идёт по типу значения привязки (TASK-717): младший регистр пары
+N, N+1 в кадр не попадает — значением управляет привязка N.
 """
 from __future__ import annotations
 
 from typing import Any
 
+from app.modbus.behavior import BehaviorRegistry, pair_owner, wire_format_for
 from app.modbus.codec import decode
 from app.modbus.slave10 import TIMESTAMP_ADDR
 from app.modbus.slave_map import SlaveMap
@@ -23,24 +26,34 @@ def slave10_ir_values(smap: SlaveMap) -> dict[str, int | float | bool]:
     return values
 
 
-def area_values(smap: SlaveMap, area: Area) -> dict[str, int | float | bool]:
-    """Значения области по сетке адресов (TASK-305).
+def area_values(
+    smap: SlaveMap,
+    area: Area,
+    registry: BehaviorRegistry | None = None,
+) -> dict[str, int | float | bool]:
+    """Значения области по сетке адресов (TASK-305, TASK-717).
 
-    hr/ir декодируются по формату слейва (для 32-битных — значения 1,3,…,1023),
+    hr/ir декодируются по типу значения привязки (нативный тип слейва, если
+    привязка не переопределена); адреса младших регистров пар N, N+1 скрыты.
     cl/di — bool. Неинициализированные регистры читаются как 0 (sparse-хранилище).
     """
     if smap.spec.slave_id == 10 and area == "ir":
         return slave10_ir_values(smap)
-    fmt = smap.spec.fmt
     values: dict[str, int | float | bool] = {}
     bit_area = area in ("cl", "di")
     for rng in smap.spec.area_ranges(area):
         for address in range(rng.start, rng.stop + 1, rng.step):
             if bit_area:
                 values[str(address)] = smap.get_bits(area, address, 1)[0]
-            else:
-                raw = smap.get_registers(area, address, fmt.registers_per_value)
-                values[str(address)] = decode(raw, fmt)
+                continue
+            if registry is not None and pair_owner(
+                registry, smap.spec.slave_id, area, address
+            ) is not None:
+                continue  # младший регистр пары N, N+1: значение живёт на адресе N
+            config = registry.get(smap.spec.slave_id, area, address) if registry else None
+            fmt = wire_format_for(config, smap.spec.slave_id) if config else smap.spec.fmt
+            raw = smap.get_registers(area, address, fmt.registers_per_value)
+            values[str(address)] = decode(raw, fmt)
     return values
 
 
@@ -49,6 +62,7 @@ def state_payload(
     slave: int,
     areas: tuple[Area, ...],
     addresses: tuple[int, ...] | None = None,
+    registry: BehaviorRegistry | None = None,
 ) -> dict[str, Any]:
     """Кадр состояния `{"slave", "fmt", "areas"}` (GET /state и /ws/state, ADR-005 п. 2).
 
@@ -58,7 +72,7 @@ def state_payload(
     wanted = set(addresses) if addresses is not None else None
     out: dict[str, dict[str, int | float | bool]] = {}
     for area in areas:
-        values = area_values(smap, area)
+        values = area_values(smap, area, registry)
         if wanted is not None:
             values = {k: v for k, v in values.items() if int(k) in wanted}
         out[area] = values

@@ -110,9 +110,22 @@ def test_policy_out_of_map_is_silent() -> None:
 
 
 def test_touched_bindings_32bit() -> None:
-    assert touched_bindings(1, "hr", 5, 2) == [(1, "hr", 5), (1, "hr", 6)]
-    assert touched_bindings(2, "hr", 2, 2) == [(2, "hr", 1), (2, "hr", 3)]
-    assert touched_bindings(3, "di", 7, 1) == [(3, "di", 7)]
+    """Окно записи → привязки: слейвы 2..9 — по сетке значений, биты — по битам."""
+    assert touched_bindings(None, 1, "hr", 5, 2) == [(1, "hr", 5), (1, "hr", 6)]
+    assert touched_bindings(None, 2, "hr", 2, 2) == [(2, "hr", 1), (2, "hr", 3)]
+    assert touched_bindings(None, 3, "di", 7, 1) == [(3, "di", 7)]
+
+
+def test_touched_bindings_resolves_pair_owner() -> None:
+    """Запись в младший регистр пары N, N+1 задевает значение N (TASK-717).
+
+    Резолв пары требует registry: без него каждое слово slave 1 — своя привязка.
+    """
+    registry = BehaviorRegistry()
+    registry.set(1, "hr", 5, Behavior("constant", {"value": 0}, dtype="float32"))
+    assert touched_bindings(registry, 1, "hr", 5, 1) == [(1, "hr", 5)]
+    assert touched_bindings(registry, 1, "hr", 6, 1) == [(1, "hr", 5)]
+    assert touched_bindings(registry, 1, "hr", 6, 2) == [(1, "hr", 5), (1, "hr", 7)]
 
 
 # --- контекст сервера и клиент ---------------------------------------------------------

@@ -59,6 +59,24 @@ def test_behaviors_page_has_overrides_table() -> None:
         assert fragment in html, fragment
 
 
+def test_behaviors_page_has_type_select() -> None:
+    """Селект «Тип» формы и колонка «Тип» в переопределениях (TASK-717)."""
+    with _client() as client:
+        response = client.get("/behaviors")
+    html = response.text
+    assert 'id="bh-dtype"' in html
+    assert "<th>Тип</th>" in html  # таблица переопределений
+    with _client() as client:
+        js = client.get("/static/behaviors.js").text
+    for fragment in (
+        "renderDtypes",
+        "selectedDtype",
+        "dtypesForFmt",
+        "dtype: selectedDtype()",
+    ):
+        assert fragment in js, fragment
+
+
 def test_behaviors_page_serves_js_module() -> None:
     with _client() as client:
         response = client.get("/behaviors")
@@ -82,24 +100,31 @@ def test_behaviors_js_applies_single_binding() -> None:
 
 
 def test_behaviors_js_filters_kinds_by_area() -> None:
-    """Числовые kind — для hr/ir, дискретные — для cl/di (check_kind_for_area)."""
+    """Числовые kind — для hr/ir, дискретные — для cl/di (check_kind_for_area).
+
+    Схема kind'ов — в общем модуле behavior-form.js (TASK-716: картe регистров
+    нужна та же схема); behaviors.js её импортирует.
+    """
     with _client() as client:
-        response = client.get("/static/behaviors.js")
-    js = response.text
-    assert "NUMERIC_KINDS" in js
-    assert "DISCRETE_KINDS" in js
-    assert 'area === "hr" || area === "ir"' in js
+        form_js = client.get("/static/behavior-form.js").text
+        page_js = client.get("/static/behaviors.js").text
+    assert "NUMERIC_KINDS" in form_js
+    assert "DISCRETE_KINDS" in form_js
+    assert 'area === "hr" || area === "ir"' in form_js
     for kind in ("counter", "sawtooth", "sine", "follow"):
-        assert f'"{kind}"' in js, kind
+        assert f'"{kind}"' in form_js, kind
     for kind in ("toggle", "pwm", "random_bit", "counter_bits", "follow_bit"):
-        assert f'"{kind}"' in js, kind
+        assert f'"{kind}"' in form_js, kind
+    assert 'from "./behavior-form.js"' in page_js
 
 
 def test_behaviors_js_params_specs_match_generators() -> None:
-    """Поля параметров по kind с дефолтами generators.py (TASK-721)."""
+    """Поля параметров по kind с дефолтами generators.py (TASK-721).
+
+    PARAM_SPECS — в общем модуле behavior-form.js (TASK-716).
+    """
     with _client() as client:
-        response = client.get("/static/behaviors.js")
-    js = response.text
+        form_js = client.get("/static/behavior-form.js").text
     for fragment in (
         "PARAM_SPECS",
         '"interval_s"',
@@ -110,7 +135,7 @@ def test_behaviors_js_params_specs_match_generators() -> None:
         '"duty"',
         '"source"',
     ):
-        assert fragment in js, fragment
+        assert fragment in form_js, fragment
 
 
 def test_behaviors_js_lists_overrides() -> None:

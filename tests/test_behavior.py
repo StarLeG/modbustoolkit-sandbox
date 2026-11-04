@@ -2,6 +2,7 @@
 
 TASK-205: дефолтные поведения слейвов 1..9 материализованы в реестре.
 TASK-241: нормализация value-параметров по формату регистра.
+TASK-717: тип значения `Behavior.dtype`, геометрия пар N, N+1.
 """
 from __future__ import annotations
 
@@ -13,11 +14,17 @@ from app.modbus.behavior import (
     BEHAVIOR_KINDS,
     Behavior,
     BehaviorRegistry,
+    binding_width,
     check_binding,
+    check_dtype_for_area,
+    check_geometry,
     check_kind_for_area,
     default_behavior,
+    effective_dtype,
+    pair_owner,
+    wire_format_for,
 )
-from app.modbus.types import AREAS, SLAVE_SPECS
+from app.modbus.types import AREAS, SLAVE_SPECS, RegisterFormat
 
 # --- модель Behavior -------------------------------------------------------------------
 
@@ -399,3 +406,157 @@ def test_normalize_preserves_locked() -> None:
     assert behavior is not None
     assert behavior.params == {"value": 65535}
     assert behavior.locked is True
+
+
+def test_normalize_keeps_dtype() -> None:
+    """Нормализация считает по типу значения привязки и не теряет dtype (TASK-717)."""
+    registry = BehaviorRegistry()
+    registry.set(1, "hr", 5, Behavior("constant", {"value": 841.37}, dtype="float32"))
+    behavior = registry.get(1, "hr", 5)
+    assert behavior is not None
+    assert behavior.dtype == "float32"
+    assert behavior.params == {"value": 841.37}  # float — дробная часть остаётся
+    registry.set(1, "hr", 7, Behavior("constant", {"value": 841.37}, dtype="int16"))
+    behavior = registry.get(1, "hr", 7)
+    assert behavior is not None
+    assert behavior.dtype == "int16"
+    assert behavior.params == {"value": 841}  # int16 — дробная часть отбрасывается
+
+
+# --- тип значения (TASK-717) ------------------------------------------------------------
+
+
+def test_behavior_dtype_field() -> None:
+    behavior = Behavior(kind="counter", dtype="float32")
+    assert behavior.dtype == "float32"
+    assert Behavior(kind="counter").dtype is None  # None — нативный тип слейва
+    with pytest.raises(ValueError, match="неизвестный тип"):
+        Behavior(kind="counter", dtype="float64")  # type: ignore[arg-type]
+
+
+def test_effective_dtype_and_wire_format() -> None:
+    native = Behavior(kind="counter")
+    assert effective_dtype(native, 1) == "uint16"
+    assert effective_dtype(native, 2) == "uint32"
+    assert effective_dtype(native, 6) == "float32"
+    explicit = Behavior(kind="counter", dtype="int16")
+    assert effective_dtype(explicit, 1) == "int16"
+    assert effective_dtype(explicit, 2) == "int16"
+    assert wire_format_for(explicit, 1) is RegisterFormat.INT16
+    assert wire_format_for(Behavior("counter", dtype="uint32"), 1) is RegisterFormat.UINT32_ABCD
+    assert wire_format_for(Behavior("counter", dtype="float32"), 1) is RegisterFormat.FLOAT_ABCD
+    assert wire_format_for(Behavior("counter", dtype="float32"), 3) is RegisterFormat.FLOAT_CDAB
+    # нативный формат слейва сохраняется без явного типа
+    assert wire_format_for(native, 1) is RegisterFormat.UINT16
+    assert wire_format_for(native, 7) is RegisterFormat.FLOAT_CDAB
+
+
+def test_binding_width() -> None:
+    assert binding_width(Behavior("counter"), 1, "hr") == 1  # нативный uint16
+    assert binding_width(Behavior("counter", dtype="uint32"), 1, "hr") == 2
+    assert binding_width(Behavior("counter", dtype="int16"), 1, "ir") == 1
+    assert binding_width(Behavior("constant", {"value": 0}), 1, "cl") == 1  # биты — всегда 1
+    assert binding_width(Behavior("counter"), 2, "hr") == 2  # слот слейва уже пара
+
+
+def test_check_dtype_for_area() -> None:
+    check_dtype_for_area(None, 1, "cl")
+    check_dtype_for_area(None, 1, "hr")  # нативный тип слейва
+    check_dtype_for_area("int16", 1, "hr")  # 16-битная сетка принимает все типы
+    check_dtype_for_area("uint32", 1, "ir")
+    check_dtype_for_area("float32", 2, "ir")  # 32-битная сетка — только 32-битные типы
+    with pytest.raises(ValueError, match="не задаётся"):
+        check_dtype_for_area("uint16", 1, "cl")
+    with pytest.raises(ValueError, match="не задаётся"):
+        check_dtype_for_area("float32", 3, "di")
+    with pytest.raises(ValueError, match="не подходит"):
+        check_dtype_for_area("uint16", 2, "hr")
+    with pytest.raises(ValueError, match="не подходит"):
+        check_dtype_for_area("int16", 9, "ir")
+
+
+def test_registry_set_validates_dtype() -> None:
+    registry = BehaviorRegistry()
+    with pytest.raises(ValueError, match="не задаётся"):
+        registry.set(1, "cl", 1, Behavior("constant", {"value": 1}, dtype="uint32"))
+    with pytest.raises(ValueError, match="не подходит"):
+        registry.set(2, "hr", 1, Behavior("counter", dtype="int16"))
+    registry.set(2, "hr", 1, Behavior("counter", dtype="int32"))  # допустимый тип — ок
+    behavior = registry.get(2, "hr", 1)
+    assert behavior is not None
+    assert behavior.dtype == "int32"
+
+
+# --- геометрия пар N, N+1 (TASK-717) ----------------------------------------------------
+
+
+def test_pair_owner_resolves_shadow_register() -> None:
+    registry = BehaviorRegistry()
+    assert pair_owner(registry, 1, "hr", 5) is None  # сосед — не пара
+    registry.set(1, "hr", 5, Behavior("constant", {"value": 0}, dtype="float32"))
+    assert pair_owner(registry, 1, "hr", 5) is None  # голова пары самостоятельна
+    assert pair_owner(registry, 1, "hr", 6) == 5  # младший регистр пары 5, 6
+    registry.set(1, "ir", 7, Behavior("counter", dtype="uint32"))
+    assert pair_owner(registry, 1, "ir", 8) == 7
+    assert pair_owner(registry, 2, "hr", 2) is None  # 32-битная сетка — пересечений нет
+    assert pair_owner(registry, 1, "cl", 6) is None  # биты не скрываются парами
+
+
+def test_check_geometry_rejects_shadow_address() -> None:
+    registry = BehaviorRegistry()
+    registry.set(1, "hr", 5, Behavior("constant", {"value": 0}, dtype="float32"))
+    with pytest.raises(ValueError, match="младший регистр пары"):
+        registry.set(1, "hr", 6, Behavior("constant", {"value": 1}))
+    registry.remove(1, "hr", 5)  # пара убрана — адрес снова самостоятелен
+    registry.set(1, "hr", 6, Behavior("constant", {"value": 1}))
+
+
+def test_check_geometry_requires_pair_in_map() -> None:
+    registry = BehaviorRegistry()
+    with pytest.raises(ValueError, match="вне карты регистров"):
+        registry.set(1, "hr", 1024, Behavior("constant", {"value": 0}, dtype="uint32"))
+    registry.set(1, "hr", 1023, Behavior("constant", {"value": 0}, dtype="uint32"))  # 1023, 1024 — ок
+
+
+def test_check_geometry_rejects_override_at_neighbor() -> None:
+    registry = BehaviorRegistry()
+    registry.set(1, "hr", 6, Behavior("sawtooth", {"min": 0, "max": 10}))
+    with pytest.raises(ValueError, match="сначала сбросьте"):
+        registry.set(1, "hr", 5, Behavior("constant", {"value": 0}, dtype="float32"))
+    registry.remove(1, "hr", 6)  # сброс соседа к дефолту освобождает пару
+    registry.set(1, "hr", 5, Behavior("constant", {"value": 0}, dtype="float32"))
+
+
+def test_check_geometry_planned_batch_is_atomic() -> None:
+    """Элементы batch учитывают друг друга: N, N+1 → головы пар не конфликтуют."""
+    registry = BehaviorRegistry()
+    pair_head = Behavior("constant", {"value": 0}, dtype="float32")
+    other_head = Behavior("constant", {"value": 0}, dtype="float32")
+    planned: dict[tuple[int, str, int], Behavior | None] = {
+        (1, "hr", 5): pair_head,
+        (1, "hr", 7): other_head,
+        (1, "hr", 8): None,  # младший регистр пары 7, 8 сбрасывается тем же пакетом
+    }
+    check_geometry(registry, 1, "hr", 5, pair_head, planned)
+    check_geometry(registry, 1, "hr", 7, other_head, planned)
+    # а вот привязка на младший регистр пары того же пакета — ошибка
+    with pytest.raises(ValueError, match="младший регистр пары"):
+        check_geometry(registry, 1, "hr", 6, Behavior("constant", {"value": 0}), planned)
+    # и голова пары поверх запланированного override соседа — тоже
+    with pytest.raises(ValueError, match="сначала сбросьте"):
+        check_geometry(
+            registry,
+            1,
+            "hr",
+            5,
+            pair_head,
+            {(1, "hr", 5): pair_head, (1, "hr", 6): Behavior("constant", {"value": 1})},
+        )
+
+
+def test_check_geometry_allows_reset_anywhere() -> None:
+    """Сброс к дефолту (behavior=None) допустим в любом адресе, включая младший."""
+    registry = BehaviorRegistry()
+    registry.set(1, "hr", 5, Behavior("constant", {"value": 0}, dtype="float32"))
+    check_geometry(registry, 1, "hr", 6, None)  # младший регистр пары — сбросить можно
+    registry.remove(1, "hr", 6)

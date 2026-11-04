@@ -1,4 +1,7 @@
-"""TASK-121: кодек uint16/uint32/float ↔ ABCD/CDAB/BADC/DCBA (HRIR_SPEC.md)."""
+"""TASK-121: кодек uint16/uint32/float ↔ ABCD/CDAB/BADC/DCBA (HRIR_SPEC.md).
+
+TASK-717: знаковые int16/int32 (двухкомплементарные) и clamp_value по типу.
+"""
 from __future__ import annotations
 
 import math
@@ -7,7 +10,7 @@ import struct
 import pytest
 
 from app.modbus import RegisterFormat
-from app.modbus.codec import decode, encode
+from app.modbus.codec import clamp_value, decode, encode, value_range
 
 # Таблица раскодирования из docs/HRIR_SPEC.md:
 # вход 4 байта 0x12 0x34 0x56 0x78 → регистры [0x1234, 0x5678]
@@ -23,6 +26,13 @@ UINT32_ORDERS = [
     RegisterFormat.UINT32_CDAB,
     RegisterFormat.UINT32_BADC,
     RegisterFormat.UINT32_DCBA,
+]
+
+INT32_ORDERS = [
+    RegisterFormat.INT32_ABCD,
+    RegisterFormat.INT32_CDAB,
+    RegisterFormat.INT32_BADC,
+    RegisterFormat.INT32_DCBA,
 ]
 
 FLOAT_ORDERS = [
@@ -139,3 +149,63 @@ def test_float_nan_inf_round_trip_bitwise() -> None:
         regs = encode(value, RegisterFormat.FLOAT_ABCD)
         result = decode(regs, RegisterFormat.FLOAT_ABCD)
         assert math.isnan(result) if math.isnan(value) else result == value
+
+
+# --- знаковые целые и clamp_value (TASK-717) -------------------------------------------
+
+
+def test_int16_round_trip_and_boundaries() -> None:
+    for value in (-32768, -1, 0, 1, 32767):
+        assert decode(encode(value, RegisterFormat.INT16), RegisterFormat.INT16) == value
+    assert encode(-1, RegisterFormat.INT16) == [0xFFFF]
+    assert decode([0x8000], RegisterFormat.INT16) == -32768
+
+
+@pytest.mark.parametrize("fmt", INT32_ORDERS)
+@pytest.mark.parametrize("value", [0, -1, 1, -2147483648, 2147483647, -123456789])
+def test_int32_round_trip(fmt: RegisterFormat, value: int) -> None:
+    assert decode(encode(value, fmt), fmt) == value
+
+
+def test_int32_word_order_matches_uint32() -> None:
+    """Перестановка слов знаковых форматов та же, что у uint32 (HRIR_SPEC.md)."""
+    value = 0x12345678  # положительное — байты совпадают с uint32
+    for signed, unsigned in zip(INT32_ORDERS, UINT32_ORDERS, strict=True):
+        assert encode(value, signed) == encode(value, unsigned)
+
+
+def test_signed_encode_rejects_out_of_range() -> None:
+    with pytest.raises(ValueError):
+        encode(-32769, RegisterFormat.INT16)
+    with pytest.raises(ValueError):
+        encode(32768, RegisterFormat.INT16)
+    with pytest.raises(ValueError):
+        encode(-2147483649, RegisterFormat.INT32_ABCD)
+    with pytest.raises(ValueError):
+        encode(2147483648, RegisterFormat.INT32_CDAB)
+
+
+def test_value_range_signed_and_unsigned() -> None:
+    assert value_range(RegisterFormat.UINT16) == (0, 0xFFFF)
+    assert value_range(RegisterFormat.INT16) == (-0x8000, 0x7FFF)
+    assert value_range(RegisterFormat.UINT32_ABCD) == (0, 0xFFFFFFFF)
+    assert value_range(RegisterFormat.INT32_ABCD) == (-0x80000000, 0x7FFFFFFF)
+
+
+def test_clamp_value_int_types() -> None:
+    """Целые типы: усечение дробной части + clamp в диапазон типа."""
+    assert clamp_value(70000, RegisterFormat.UINT16) == 0xFFFF
+    assert clamp_value(-5, RegisterFormat.UINT16) == 0
+    assert clamp_value(3.9, RegisterFormat.UINT16) == 3
+    assert clamp_value(-32769.5, RegisterFormat.INT16) == -32768
+    assert clamp_value(40000, RegisterFormat.INT16) == 32767
+    assert clamp_value(2**32, RegisterFormat.UINT32_ABCD) == 0xFFFFFFFF
+    assert clamp_value(-(2**31) - 1, RegisterFormat.INT32_ABCD) == -0x80000000
+
+
+def test_clamp_value_float_keeps_fraction_and_kills_nan() -> None:
+    assert clamp_value(841.37, RegisterFormat.FLOAT_CDAB) == pytest.approx(841.37)
+    assert clamp_value(math.nan, RegisterFormat.FLOAT_ABCD) == 0.0
+    assert clamp_value(math.inf, RegisterFormat.FLOAT_ABCD) == 0.0
+    assert clamp_value(-math.inf, RegisterFormat.UINT16) == 0
+    assert clamp_value(841.37, RegisterFormat.UINT16) == 841
