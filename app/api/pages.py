@@ -64,6 +64,10 @@ TELEGRAM_URL = "https://t.me/modbustoolkit"
 #: Публичный репозиторий сервера: ссылка в футере и раздел «Исходный код» на /docs.
 GITHUB_URL = "https://github.com/StarLeG/modbustoolkit-sandbox"
 GITHUB_CLONE_URL = f"{GITHUB_URL}.git"
+#: Экосистема Electroman: соседние сервисы, сайт и автор (футер).
+OPCUA_SANDBOX_URL = "https://opcua-sendbox.electroman.by/"
+ELECTROMAN_URL = "https://electroman.by"
+AUTHOR_URL = "https://github.com/StarLeG"
 
 
 def _project_version() -> str:
@@ -1705,7 +1709,7 @@ def _journal_body(config: Config, lang: Lang) -> str:
 
 
 def _footer(lang: Lang) -> str:
-    """Футер в фирменном стиле: продукт, поддержка, ссылки на API сервера."""
+    """Футер в стиле экосистемы Electroman: продукт, соседние сервисы, поддержка, API сервера."""
     ver = escape(_project_version())
     return (
         "<footer>\n<div class=\"wrap\">\n"
@@ -1715,7 +1719,7 @@ def _footer(lang: Lang) -> str:
         "  </div>\n"
         '  <div class="foot-grid">\n'
         '    <div class="foot-group">\n'
-        f'      <span class="eyebrow">{t(lang, "ModbusToolkit · отдельный клиент", "ModbusToolkit · separate client")}</span>\n'
+        '      <span class="eyebrow">ModbusToolkit</span>\n'
         "      <ul>\n"
         f'        <li><a href="{PRODUCT_URL}">{t(lang, "Скачать для Windows и Linux", "Download for Windows and Linux")}</a></li>\n'
         f'        <li><a href="{PRODUCT_DOCS_URL}">{t(lang, "Документация ModbusToolkit", "ModbusToolkit docs")}</a></li>\n'
@@ -1723,10 +1727,18 @@ def _footer(lang: Lang) -> str:
         "      </ul>\n"
         "    </div>\n"
         '    <div class="foot-group">\n'
+        f'      <span class="eyebrow">{t(lang, "Экосистема Electroman", "Electroman ecosystem")}</span>\n'
+        "      <ul>\n"
+        f'        <li><a href="{OPCUA_SANDBOX_URL}">OPC UA SendBox</a></li>\n'
+        f'        <li><a href="{PRODUCT_URL}">ModbusToolkit</a></li>\n'
+        f'        <li><a href="{ELECTROMAN_URL}">electroman.by</a></li>\n'
+        "      </ul>\n"
+        "    </div>\n"
+        '    <div class="foot-group">\n'
         f'      <span class="eyebrow">{t(lang, "Поддержка", "Support")}</span>\n'
         "      <ul>\n"
         f'        <li><a href="{SUPPORT_URL}">{t(lang, "Поддержать проект", "Support the project")}</a></li>\n'
-        f'        <li>{t(lang, "Донаты идут на испытательный стенд", "Donations fund the test bench")}</li>\n'
+        f'        <li>{t(lang, "Автор", "Author")}: <a href="{AUTHOR_URL}">Олег Старинский</a></li>\n'
         "      </ul>\n"
         "    </div>\n"
         '    <div class="foot-group">\n'
