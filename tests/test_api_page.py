@@ -189,6 +189,17 @@ def test_registers_js_trend() -> None:
         assert fragment in js, fragment
 
 
+def test_registers_js_updates_dependent_cells() -> None:
+    """Каждый WS-кадр перерисовывает окно целиком: у строки-продолжения
+    (301 — младшее слово слота 300) своего ключа значения в кадре нет,
+    и без явной перерисовки её ячейка зависала бы."""
+    with _client() as client:
+        response = client.get("/static/registers.js")
+    js = response.text
+    # renderTable, drawTrends и applyFrame проходят по visibleRows()
+    assert js.count("of visibleRows()") >= 3
+
+
 def test_registers_page_has_edit_warning() -> None:
     """Плашка про перезапись при inline-редактировании CL/HR (TASK-713)."""
     with _client() as client:

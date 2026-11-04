@@ -821,9 +821,14 @@ function applyFrame(frame) {
     const number = Number(address);
     state.values.set(number, value);
     if (tracked.has(number)) pushHistory(number, value, now);
+  }
+  // Строка без собственного ключа значения (301 — младшее слово слота 300)
+  // и пара N, N+1 зависят от соседних регистров: перерисовываем всё окно,
+  // редактируемые ячейки не трогаем
+  for (const address of visibleRows()) {
     const cell = el("reg-cell-" + address);
     if (cell && !cell.classList.contains("editing")) {
-      cell.textContent = formatDisplay(number);
+      cell.textContent = formatDisplay(address);
     }
   }
 }
