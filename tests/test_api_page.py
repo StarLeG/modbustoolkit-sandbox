@@ -97,6 +97,7 @@ def test_registers_page_has_format_column() -> None:
     assert 'id="reg-format"' not in html
     assert "Формат" in html  # колонка таблицы
     assert "uint32/int32/float32" in html  # подпись про 32-битные пары N, N+1
+    assert "не показывается" in html  # поглощённый парой адрес убран из таблицы
 
 
 def test_registers_js_pagination() -> None:
@@ -152,7 +153,14 @@ def test_registers_js_pair_span() -> None:
     with _client() as client:
         response = client.get("/static/registers.js")
     js = response.text
-    for fragment in ("pairWords", "wireAt", "pairAvailable", "modbus-reg-formats", "slotOf"):
+    for fragment in (
+        "pairWords",
+        "wireAt",
+        "pairAvailable",
+        "modbus-reg-formats",
+        "slotOf",
+        "visibleRows",
+    ):
         assert fragment in js, fragment
 
 

@@ -229,6 +229,15 @@ function setRowCode(address, code) {
 
 // ---------- отображение значения в формате строки ----------
 
+// Пара слов → число в 32-битном формате строки
+function numberFromWords(words, code) {
+  if (code === "hex32") return ((words[0] << 16) | words[1]) >>> 0;
+  const bits = wordsToBits(words, orderOf(code));
+  if (code.startsWith("int32")) return toSigned(bits, 32);
+  if (code.startsWith("float32")) return bitsToFloat(bits);
+  return bits;
+}
+
 // Число строки в выбранном формате (для ячейки и тренда), или null
 function rowNumber(address, code) {
   if (state.area === "cl" || state.area === "di") {
@@ -241,11 +250,7 @@ function rowNumber(address, code) {
   }
   const words = pairWords(address);
   if (words === null) return null;
-  if (code === "hex32") return ((words[0] << 16) | words[1]) >>> 0;
-  const bits = wordsToBits(words, orderOf(code));
-  if (code.startsWith("int32")) return toSigned(bits, 32);
-  if (code.startsWith("float32")) return bitsToFloat(bits);
-  return bits;
+  return numberFromWords(words, code);
 }
 
 function formatNumber(number, code) {
@@ -478,6 +483,24 @@ function pageAddresses() {
   return state.addresses.slice(state.start, state.start + PAGE_SIZE);
 }
 
+// Строки окна: адрес, поглощённый 32-битной строкой перед ним, не показывается
+// — пара N, N+1 отображается одной строкой (slave 10: 300 — UINT32 timestamp,
+// регистр 301 — его младшее слово). Первая строка окна показывается всегда.
+function visibleRows() {
+  const out = [];
+  let covered = false;
+  for (const address of pageAddresses()) {
+    const coveredHere = covered && out.length > 0 && address === out[out.length - 1] + 1;
+    if (coveredHere) {
+      covered = false;
+      continue;
+    }
+    out.push(address);
+    covered = codeWidth(rowCode(address)) === 32 && pairAvailable(address);
+  }
+  return out;
+}
+
 function pagesCount() {
   return Math.max(1, Math.ceil(state.addresses.length / PAGE_SIZE));
 }
@@ -573,7 +596,7 @@ function buildFormatSelect(address) {
 function renderTable() {
   const body = el("reg-body");
   body.innerHTML = "";
-  for (const address of pageAddresses()) {
+  for (const address of visibleRows()) {
     const row = document.createElement("tr");
 
     const cellAddress = document.createElement("td");

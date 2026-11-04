@@ -1228,8 +1228,9 @@ _REG_NOTE_RU = (
     "переход — по начальному адресу или номеру страницы (Enter). Формат "
     "значения выбирается в каждой строке: uint16/int16/HEX16 либо 32-битные "
     "uint32/int32/float32 с порядком слов ABCD/CDAB/BADC/DCBA (и HEX32) — "
-    "32-битный формат объединяет регистры N и N+1, 16-битный показывает слово "
-    "регистра N. Выбор формата запоминается в браузере."
+    "32-битный формат объединяет регистры N и N+1 одной строкой (следующий "
+    "адрес в таблице не показывается), 16-битный показывает слово регистра N. "
+    "Выбор формата запоминается в браузере."
 )
 _REG_NOTE_EN = (
     "Values update in real time, no page reload needed, and are shared "
@@ -1238,8 +1239,9 @@ _REG_NOTE_EN = (
     "registers; jump by start address or page number (Enter). The value "
     "format is chosen per row: uint16/int16/HEX16 or 32-bit "
     "uint32/int32/float32 with ABCD/CDAB/BADC/DCBA word order (and HEX32) — "
-    "a 32-bit format spans registers N and N+1, a 16-bit one shows the word "
-    "of register N. The format choice is remembered in the browser."
+    "a 32-bit format spans registers N and N+1 in one row (the next address is "
+    "not shown in the table), a 16-bit one shows the word of register N. "
+    "The format choice is remembered in the browser."
 )
 _REG_EDIT_RU = (
     "Редактирование CL/HR доступно прямо в таблице (клик по значению). "
