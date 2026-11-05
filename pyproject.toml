@@ -1,7 +1,9 @@
 [project]
 name = "modbus-test-server"
-version = "0.1.3"
+version = "0.1.4"
 description = "Modbus Sandbox - публичный тестовый Modbus-TCP сервер (modbus-sendbox.electroman.by)"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
     "pymodbus>=3.7",
