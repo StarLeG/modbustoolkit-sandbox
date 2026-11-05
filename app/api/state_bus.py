@@ -20,6 +20,7 @@ from app.api.state_view import state_payload
 from app.modbus.behavior import BehaviorRegistry
 from app.modbus.journal import JournalEntry
 from app.modbus.slave_map import SlaveMap
+from app.modbus.tags import TagStore
 from app.modbus.types import AREAS, SLAVE_SPECS, Area
 
 logger = logging.getLogger(__name__)
@@ -104,6 +105,7 @@ class WebStateBus:
         maps: dict[int, SlaveMap],
         *,
         registry: BehaviorRegistry | None = None,
+        tags: TagStore | None = None,
         state_hz: float = 2.0,
         queue_size: int = WS_CLIENT_QUEUE,
         send_timeout_s: float = WS_SEND_TIMEOUT_S,
@@ -114,6 +116,7 @@ class WebStateBus:
             raise ValueError(f"queue_size должен быть > 0, получено: {queue_size}")
         self._maps = maps
         self._registry = registry
+        self._tags = tags
         self._state_interval = 1.0 / state_hz
         self._queue_size = queue_size
         self._send_timeout_s = send_timeout_s
@@ -197,7 +200,12 @@ class WebStateBus:
             return
         sub = client.subscription
         payload = state_payload(
-            self._maps, sub.slave, sub.areas, sub.addresses, registry=self._registry
+            self._maps,
+            sub.slave,
+            sub.areas,
+            sub.addresses,
+            registry=self._registry,
+            tags=self._tags,
         )
         self._offer(client, {"type": "state", **payload})
 
